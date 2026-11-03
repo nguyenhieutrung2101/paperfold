@@ -7,9 +7,12 @@
  * replace them.
  */
 
-/** Degrees an uncreased fold opens when let go, for stiffness 0..1. */
+/**
+ * Degrees an uncreased fold opens when let go, for stiffness 0..1. Modest on purpose: a
+ * flap lying on the table is held down by its own weight, so only stiff paper opens much.
+ */
 export function springbackDeg(stiffness: number): number {
-  return 8 + 30 * clamp01(stiffness);
+  return 4 + 14 * clamp01(stiffness);
 }
 
 /** Rest angle magnitude of a folded crease with the given peak sharpness. */
