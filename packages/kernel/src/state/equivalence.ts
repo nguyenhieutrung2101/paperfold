@@ -1,5 +1,5 @@
 import { centroid, signedArea } from '../geometry/polygon.ts';
-import { applyMaterial } from '../geometry/rigid.ts';
+import { applyMaterial, compose, type Rigid3 } from '../geometry/rigid.ts';
 import type { Vec2 } from '../geometry/vec.ts';
 import { adjacency, getVertex, materialPolygon } from '../paper/creasePattern.ts';
 import type { FaceId } from '../paper/types.ts';
@@ -17,7 +17,14 @@ export type Equivalence = { readonly same: true } | { readonly same: false; read
  * Used to check that build steps replay to the design, that a precrease-then-push reverse
  * fold equals the direct one, and (Phase 2) follow-along.
  */
-export function sameFoldedState(a: KernelState, b: KernelState, tolMm = 1e-4): Equivalence {
+export interface EquivalenceOptions {
+  readonly tolMm?: number;
+  /** Ignore where the whole model sits on the table (a common rigid motion). */
+  readonly upToRigidMotion?: boolean;
+}
+
+export function sameFoldedState(a: KernelState, b: KernelState, options: EquivalenceOptions = {}): Equivalence {
+  const tolMm = options.tolMm ?? 1e-4;
   const keyOf = (s: KernelState, f: FaceId) => {
     const poly = materialPolygon(s.cp, f);
     return { c: centroid(poly), area: signedArea(poly) };
@@ -35,10 +42,17 @@ export function sameFoldedState(a: KernelState, b: KernelState, tolMm = 1e-4): E
     if (!hit) return { same: false, why: `No face like ${fa} at ${ka.c.map((x) => x.toFixed(3)).join(',')}` };
     match.set(fa, hit.f);
   }
-  // Placements: the face's material vertices land at the same world points.
+  // Placements: the face's material vertices land at the same world points (optionally
+  // after moving all of `a` rigidly so its first face lines up).
+  let shift: Rigid3 | null = null;
+  if (options.upToRigidMotion) {
+    const [fa0, fb0] = [...match.entries()][0]!;
+    shift = compose(b.folded.placements.get(fb0)!, invertRigid(a.folded.placements.get(fa0)!));
+  }
   for (const [fa, fb] of match) {
     for (const p of materialPolygon(a.cp, fa)) {
-      const pa = applyMaterial(a.folded.placements.get(fa)!, p);
+      const ta = shift ? compose(shift, a.folded.placements.get(fa)!) : a.folded.placements.get(fa)!;
+      const pa = applyMaterial(ta, p);
       const pb = applyMaterial(b.folded.placements.get(fb)!, p);
       if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]) > tolMm) {
         return { same: false, why: `Face ${fa} sits somewhere else` };
@@ -76,7 +90,9 @@ export function sameFoldedState(a: KernelState, b: KernelState, tolMm = 1e-4): E
       }
     }
   }
-  // Layer order of matched pairs.
+  // Layer order of matched pairs. A turn-over flips every relation; up to rigid motion,
+  // compare in the frame where the model faces the same way.
+  const flip = shift !== null && shift.r[4] < 0 ? -1 : 1;
   if (a.folded.layerOrder.size !== b.folded.layerOrder.size) {
     return { same: false, why: `${a.folded.layerOrder.size} layer relations vs ${b.folded.layerOrder.size}` };
   }
@@ -85,8 +101,22 @@ export function sameFoldedState(a: KernelState, b: KernelState, tolMm = 1e-4): E
     for (let j = i + 1; j < ids.length; j++) {
       const oa = orderOf(a.folded.layerOrder, ids[i]!, ids[j]!);
       const ob = orderOf(b.folded.layerOrder, match.get(ids[i]!)!, match.get(ids[j]!)!);
-      if (oa !== ob) return { same: false, why: `Faces ${ids[i]} and ${ids[j]} stack differently` };
+      if (oa !== undefined && ob !== undefined ? oa * flip !== ob : oa !== ob) return { same: false, why: `Faces ${ids[i]} and ${ids[j]} stack differently` };
     }
   }
   return { same: true };
+}
+
+/** Inverse of a rigid transform. */
+export function invertRigid(a: Rigid3): Rigid3 {
+  const r = a.r;
+  const rt = [r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]] as const;
+  return {
+    r: rt,
+    t: [
+      -(rt[0] * a.t[0] + rt[1] * a.t[1] + rt[2] * a.t[2]),
+      -(rt[3] * a.t[0] + rt[4] * a.t[1] + rt[5] * a.t[2]),
+      -(rt[6] * a.t[0] + rt[7] * a.t[1] + rt[8] * a.t[2]),
+    ],
+  };
 }

@@ -122,6 +122,12 @@ importers:
         specifier: workspace:*
         version: link:../kernel
 
+  packages/steps:
+    dependencies:
+      '@paperfold/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
 packages:
 
   '@babel/runtime@7.29.10':
