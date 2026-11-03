@@ -93,7 +93,7 @@ export function stateHash(state: KernelState): StateHash {
   }
   h.str('o');
   for (const k of sortedKeys(folded.layerOrder)) {
-    h.str(k);
+    h.num(k);
     h.num(folded.layerOrder.get(k)!);
   }
   h.str('h');

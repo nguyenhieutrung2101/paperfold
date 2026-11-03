@@ -19,14 +19,19 @@ export * from './state/create.ts';
 export * from './state/order.ts';
 export * from './state/flat.ts';
 export * from './state/derive.ts';
+export * from './state/levels.ts';
+export * from './state/equivalence.ts';
 
 export * from './moves/types.ts';
 export { fold } from './moves/fold.ts';
+export { reverseFold } from './moves/reverse.ts';
+export * from './moves/foldCore.ts';
 export { burnish } from './moves/burnish.ts';
 export { turnOver, rotate, footprintCenter } from './moves/turn.ts';
 export { applyMove } from './moves/apply.ts';
 
 export * from './validate/invariants.ts';
+export * from './recognize/recognize.ts';
 
 export * from './history/hash.ts';
 export * from './history/history.ts';

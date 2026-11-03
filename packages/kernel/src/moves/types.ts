@@ -19,6 +19,19 @@ export interface FoldParams {
   readonly layers: number | 'all';
   /** valley: the moving part swings up toward the viewer; mountain: down and under. */
   readonly direction: 'valley' | 'mountain';
+  /** Where the other hand presses (table plane). Faces under a hold can't move. */
+  readonly holds?: readonly Vec2[];
+}
+
+export interface ReverseFoldParams {
+  /** ℓ: crosses the flap's folded edge (spine) and cuts off the tip, or lies on a precrease. */
+  readonly line: PlaneLine;
+  /** A point on the tip (the part that moves). */
+  readonly seed: Vec2;
+  readonly kind: 'inside' | 'outside';
+  /** Layers of the flap under the seed; default all. */
+  readonly layers?: number | 'all';
+  readonly holds?: readonly Vec2[];
 }
 
 export interface BurnishParams {
@@ -43,6 +56,7 @@ export interface RotateParams {
 
 export type Move =
   | { readonly type: 'fold'; readonly params: FoldParams }
+  | { readonly type: 'reverseFold'; readonly params: ReverseFoldParams }
   | { readonly type: 'burnish'; readonly params: BurnishParams }
   | { readonly type: 'turnOver'; readonly params: TurnOverParams }
   | { readonly type: 'rotate'; readonly params: RotateParams };
@@ -105,6 +119,25 @@ export type Transition =
       readonly newCreases: readonly EdgeId[];
       readonly fromDeg: 0;
       readonly toDeg: 180;
+    }
+  | {
+      readonly kind: 'reverse';
+      readonly reverse: 'inside' | 'outside';
+      /** ℓ on the table plane; its left side is the tip that moved. */
+      readonly line: Line2;
+      /** Faces of the NEW state that moved (the tip). */
+      readonly moving: readonly FaceId[];
+      /** Tip faces attached to the flap's top side, and to its bottom side. */
+      readonly top: readonly FaceId[];
+      readonly bottom: readonly FaceId[];
+      /** Stationary flap faces on its top side and bottom side (they open to let the tip through). */
+      readonly flapTop: readonly FaceId[];
+      readonly flapBottom: readonly FaceId[];
+      /** The spine through P, pointing from P into the flap's body. */
+      readonly spine: Line2;
+      readonly parentOf: ReadonlyMap<FaceId, FaceId>;
+      readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
+      readonly newCreases: readonly EdgeId[];
     }
   | { readonly kind: 'burnish'; readonly edges: readonly EdgeId[] }
   | { readonly kind: 'turnOver'; readonly axis: Line2 }

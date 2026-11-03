@@ -2,6 +2,7 @@ import type { Rigid3 } from '../geometry/rigid.ts';
 import type { Tolerance } from '../geometry/tolerance.ts';
 import type { Vec2, Vec3 } from '../geometry/vec.ts';
 import type { CreasePattern, FaceId, Paper } from '../paper/types.ts';
+import type { PairKey } from './order.ts';
 
 /** A point pinned by the second hand. Pinned faces can't move (Phase 1 UI; enforced by fold now). */
 export interface Hold {
@@ -21,12 +22,12 @@ export interface FoldedState {
   readonly placements: ReadonlyMap<FaceId, Rigid3>;
   /**
    * Pairwise layer order of faces that lie flat on each other with positive-area overlap.
-   * Key "f,g" with f < g; value +1 means f is above g in world (+Y), −1 below.
+   * Key pairKey(f, g) (f < g); value +1 means f is above g in world (+Y), −1 below.
    *
    * This is FOLD's faceOrders with a world-up reference instead of a per-face normal;
    * io/fold.ts converts (see DECISIONS.md, ADR-007).
    */
-  readonly layerOrder: ReadonlyMap<string, 1 | -1>;
+  readonly layerOrder: ReadonlyMap<PairKey, 1 | -1>;
   readonly holds: readonly Hold[];
 }
 

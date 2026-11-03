@@ -3,7 +3,7 @@ import { toleranceFor } from '../geometry/tolerance.ts';
 import type { Vec2, Vec3 } from '../geometry/vec.ts';
 import { adjacency, edgeKey, getVertex } from '../paper/creasePattern.ts';
 import type { Assignment, Crease, EdgeId, Face, FaceId, Paper, Span, VertexId } from '../paper/types.ts';
-import { parsePairKey } from '../state/order.ts';
+import { type PairKey, pairKey, parsePairKey } from '../state/order.ts';
 import type { KernelState } from '../state/types.ts';
 
 /**
@@ -41,7 +41,8 @@ interface ExactState {
   readonly creases: CreaseRow[];
   readonly faces: Array<[FaceId, VertexId[]]>;
   readonly placements: Array<[FaceId, number[], number[]]>;
-  readonly layerOrder: Array<[string, 1 | -1]>;
+  /** [f, g, s]: s = +1 means f above g in world. (Version 1 files used "f,g" keys.) */
+  readonly layerOrder: Array<[number, number, 1 | -1] | [string, 1 | -1]>;
   readonly holds: Array<[FaceId, number, number]>;
   readonly next: [number, number, number, number];
 }
@@ -64,7 +65,7 @@ export function toFold(state: KernelState, title = 'Paperfold model'): FoldFile 
   });
 
   const faceOrders: Array<[number, number, number]> = [];
-  for (const [key, s] of [...state.folded.layerOrder.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+  for (const [key, s] of [...state.folded.layerOrder.entries()].sort((a, b) => a[0] - b[0])) {
     const [f, g] = parsePairKey(key);
     // Internal s: +1 = f above g in world. FOLD: +1 = f on the side of g's normal.
     const gUp = frontUp(state.folded.placements.get(g)!);
@@ -130,7 +131,12 @@ function exactState(state: KernelState): ExactState {
     ]),
     faces: byId(cp.faces).map(([id, f]) => [id, [...f.verts]]),
     placements: byId(folded.placements).map(([id, tr]) => [id, [...tr.r], [...tr.t]]),
-    layerOrder: [...folded.layerOrder.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)),
+    layerOrder: [...folded.layerOrder.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([k, s]) => {
+        const [f, g] = parsePairKey(k);
+        return [f, g, s];
+      }),
     holds: folded.holds.map((h) => [h.face, h.material[0], h.material[1]]),
     next: [next.vertex, next.edge, next.face, next.op],
   };
@@ -188,7 +194,13 @@ function fromExact(x: ExactState): KernelState {
     cp: { vertices, creases, faces, edgeIndex },
     folded: {
       placements,
-      layerOrder: new Map(x.layerOrder),
+      layerOrder: new Map(
+        x.layerOrder.map((row): [PairKey, 1 | -1] => {
+          if (row.length === 3) return [pairKey(row[0], row[1]), row[2]];
+          const [f, g] = row[0].split(',').map(Number) as [number, number];
+          return [pairKey(f, g), row[1]];
+        }),
+      ),
       holds: x.holds.map(([face, u, v]) => ({ face, material: [u, v] as const })),
     },
     next: { vertex: x.next[0], edge: x.next[1], face: x.next[2], op: x.next[3] },

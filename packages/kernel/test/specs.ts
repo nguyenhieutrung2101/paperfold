@@ -7,7 +7,7 @@ import { flatView, perpendicularBisector, side, type KernelState, type Move, typ
  * vertices, along existing creases, and corner-to-corner bisectors.
  */
 export interface MoveSpec {
-  readonly kind: 'fold' | 'turnOver' | 'rotate' | 'burnish';
+  readonly kind: 'fold' | 'turnOver' | 'rotate' | 'burnish' | 'reverse';
   readonly lineMode: 0 | 1 | 2 | 3;
   readonly a: number;
   readonly b: number;
@@ -21,7 +21,7 @@ export interface MoveSpec {
 }
 
 export const specArb: fc.Arbitrary<MoveSpec> = fc.record({
-  kind: fc.constantFrom('fold', 'fold', 'fold', 'fold', 'fold', 'fold', 'turnOver', 'rotate', 'burnish'),
+  kind: fc.constantFrom('fold', 'fold', 'fold', 'fold', 'fold', 'reverse', 'reverse', 'turnOver', 'rotate', 'burnish'),
   lineMode: fc.constantFrom(0, 0, 1, 2, 3, 3),
   a: fc.double({ min: 0, max: 1, noNaN: true }),
   b: fc.double({ min: 0, max: 1, noNaN: true }),
@@ -110,9 +110,14 @@ export function toMove(state: KernelState, spec: MoveSpec): Move | null {
   });
   const seed: Vec2 = [sx / sw, sy / sw];
   if (side({ p: l.p, d: l.d }, seed, state.tol) === 0) return null;
+  // A hold somewhere on the model now and then: folds that would move it must refuse.
+  const holds = spec.i % 5 === 0 ? [verts[spec.j % verts.length]!] : [];
+  if (spec.kind === 'reverse') {
+    return { type: 'reverseFold', params: { line: l, seed, kind: spec.valley ? 'inside' : 'outside', holds } };
+  }
   return {
     type: 'fold',
-    params: { line: l, seed, layers: spec.layers, direction: spec.valley || spec.a < 0.7 ? 'valley' : 'mountain' },
+    params: { line: l, seed, layers: spec.layers, direction: spec.valley || spec.a < 0.7 ? 'valley' : 'mountain', holds },
   };
 }
 

@@ -13,7 +13,7 @@ import { bookFold, foldMove, mustApply } from './helpers.ts';
 
 const codes = (s: KernelState) => new Set(checkInvariants(s).map((v) => v.code));
 
-function withOrder(s: KernelState, edit: (m: Map<string, 1 | -1>) => void): KernelState {
+function withOrder(s: KernelState, edit: (m: Map<number, 1 | -1>) => void): KernelState {
   const m = new Map(s.folded.layerOrder);
   edit(m);
   return { ...s, folded: { ...s.folded, layerOrder: m } };

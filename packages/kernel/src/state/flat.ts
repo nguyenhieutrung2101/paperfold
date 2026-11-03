@@ -84,6 +84,26 @@ export function overlapPairs(state: KernelState): ReadonlyArray<readonly [FaceId
   return out;
 }
 
+/** Overlapping pairs (f < g) where at least one face is in `changed`. */
+export function overlapPairsTouching(
+  state: KernelState,
+  changed: ReadonlySet<FaceId>,
+): ReadonlyArray<readonly [FaceId, FaceId]> {
+  const view = requireFlat(state);
+  const out: Array<readonly [FaceId, FaceId]> = [];
+  for (const f of [...changed].sort((a, b) => a - b)) {
+    const bf = view.box.get(f);
+    const pf = view.poly.get(f);
+    if (!bf || !pf) continue;
+    for (const g of view.faceIds) {
+      if (g === f || (changed.has(g) && g < f)) continue;
+      if (!boxesOverlap(bf, view.box.get(g)!)) continue;
+      if (convexOverlap(pf, view.poly.get(g)!, state.tol)) out.push(f < g ? [f, g] : [g, f]);
+    }
+  }
+  return out;
+}
+
 export type StackResult =
   | { readonly ok: true; readonly faces: readonly FaceId[] }
   | { readonly ok: false; readonly reason: 'no-order'; readonly faces: readonly FaceId[] };

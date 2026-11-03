@@ -26,7 +26,7 @@ function transformAll(state: KernelState, w: Rigid3, flipOrder: boolean): Kernel
   for (const [f, tr] of state.folded.placements) placements.set(f, compose(w, tr));
   let layerOrder = state.folded.layerOrder;
   if (flipOrder) {
-    const flipped = new Map<string, 1 | -1>();
+    const flipped = new Map<number, 1 | -1>();
     for (const [k, s] of layerOrder) flipped.set(k, s === 1 ? -1 : 1);
     layerOrder = flipped;
   }
@@ -48,7 +48,8 @@ export function turnOver(state: KernelState, params: TurnOverParams): MoveResult
   const c = footprintCenter(view);
   const d: Vec2 = params.axis === 'side' ? [0, 1] : [1, 0];
   const next = transformAll(state, halfTurn(planeToWorld(c), planeDirToWorld(d)), true);
-  const v = checkInvariants(next);
+  // A rigid motion of a valid state with every order mirrored is valid; check the cheap parts.
+  const v = checkInvariants(next, { changed: new Set() });
   if (v.length) return reject('internal', [], { detail: v.map((x) => x.message).join('; ') });
   return { ok: true, state: next, transition: { kind: 'turnOver', axis: { p: c, d } } };
 }
@@ -60,7 +61,7 @@ export function rotate(state: KernelState, params: RotateParams): MoveResult {
   if (!Number.isFinite(params.degrees)) return reject('degenerate');
   const c = footprintCenter(view);
   const next = transformAll(state, rotationAbout(planeToWorld(c), [0, 1, 0], (params.degrees * Math.PI) / 180), false);
-  const v = checkInvariants(next);
+  const v = checkInvariants(next, { changed: new Set() });
   if (v.length) return reject('internal', [], { detail: v.map((x) => x.message).join('; ') });
   return { ok: true, state: next, transition: { kind: 'rotate', center: c, degrees: params.degrees } };
 }

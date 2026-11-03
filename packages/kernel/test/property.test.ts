@@ -15,21 +15,26 @@ import {
   toFold,
   undo,
   type History,
+  type KernelState,
 } from '../src/index.ts';
-import { sheet } from './helpers.ts';
+
+const diagonalTriangle = () => mustApply(sheet(), foldMove([0, 0], [1, 1], [25, -25]));
+const nestedTriangle = () => mustApply(diagonalTriangle(), foldMove([0, 0], [1, -1], [-40, -30]));
+import { foldMove, mustApply, sheet } from './helpers.ts';
 import { type MoveSpec, specArb, toMove } from './specs.ts';
 
 const MAX_FACES = 160;
-const stats = { attempted: 0, accepted: 0, maxFaces: 0, rejected: new Map<string, number>() };
+const stats = { attempted: 0, accepted: 0, reverseAttempted: 0, reverseAccepted: 0, maxFaces: 0, rejected: new Map<string, number>() };
 
-function runSequence(specs: readonly MoveSpec[]): History {
-  let h = createHistory(sheet());
+function runSequence(specs: readonly MoveSpec[], start: KernelState = sheet()): History {
+  let h = createHistory(start);
   for (const spec of specs) {
     const state = currentState(h);
     if (state.cp.faces.size > MAX_FACES) break;
     const move = toMove(state, spec);
     if (!move) continue;
     if (move.type === 'fold') stats.attempted++;
+    if (move.type === 'reverseFold') stats.reverseAttempted++;
     const r = perform(h, move);
     if (!r.ok) {
       stats.rejected.set(r.reason + (r.detail ? ': ' + r.detail : ''), (stats.rejected.get(r.reason + (r.detail ? ': ' + r.detail : '')) ?? 0) + 1);
@@ -39,6 +44,7 @@ function runSequence(specs: readonly MoveSpec[]): History {
       continue;
     }
     if (move.type === 'fold') stats.accepted++;
+    if (move.type === 'reverseFold') stats.reverseAccepted++;
     stats.maxFaces = Math.max(stats.maxFaces, r.history.nodes.get(r.history.current)!.state.cp.faces.size);
     const violations = checkInvariants(r.history.nodes.get(r.history.current)!.state);
     if (violations.length) throw new Error(violations.map((v) => v.message).join('; '));
@@ -72,6 +78,18 @@ describe('kernel properties', () => {
     if (process.env.PROPERTY_STATS) console.log(stats);
     // Deep runs must reach genuinely multi-layer states.
     expect(stats.maxFaces).toBeGreaterThan(12);
+  });
+
+  it('reverse folds on closed flaps keep every invariant', () => {
+    const starts = [diagonalTriangle(), nestedTriangle()];
+    fc.assert(
+      fc.property(fc.nat(1), fc.array(specArb, { minLength: 1, maxLength: 10 }), (which, specs) => {
+        runSequence(specs, starts[which]!);
+      }),
+      { numRuns },
+    );
+    if (process.env.PROPERTY_STATS) console.log(stats);
+    expect(stats.reverseAccepted).toBeGreaterThan(0);
   });
 
   it('replaying the op log rebuilds the same state bit for bit', () => {

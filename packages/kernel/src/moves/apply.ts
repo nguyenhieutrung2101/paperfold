@@ -1,6 +1,7 @@
 import type { KernelState } from '../state/types.ts';
 import { burnish } from './burnish.ts';
 import { fold } from './fold.ts';
+import { reverseFold } from './reverse.ts';
 import { rotate, turnOver } from './turn.ts';
 import type { Move, MoveResult } from './types.ts';
 
@@ -9,6 +10,8 @@ export function applyMove(state: KernelState, move: Move): MoveResult {
   switch (move.type) {
     case 'fold':
       return fold(state, move.params);
+    case 'reverseFold':
+      return reverseFold(state, move.params);
     case 'burnish':
       return burnish(state, move.params);
     case 'turnOver':

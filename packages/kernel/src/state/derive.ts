@@ -3,7 +3,7 @@ import { compose, materialHalfTurn, rotationAbout, type Rigid3 } from '../geomet
 import { adjacency, faceEdges, getVertex } from '../paper/creasePattern.ts';
 import type { Crease, CreasePattern, EdgeId, FaceId } from '../paper/types.ts';
 import type { FlatView } from './flat.ts';
-import { orderOf } from './order.ts';
+import { orderOf, type PairKey } from './order.ts';
 
 /** Sign (+1/−1) of the face vertex farthest from the line; 0 if the face is degenerate. */
 export function faceSideOfLine(poly: readonly (readonly [number, number])[], l: Line2): -1 | 0 | 1 {
@@ -25,7 +25,7 @@ export function faceSideOfLine(poly: readonly (readonly [number, number])[], l: 
  */
 export function flatFoldAngle(
   view: FlatView,
-  order: ReadonlyMap<string, 1 | -1>,
+  order: ReadonlyMap<PairKey, 1 | -1>,
   crease: Crease,
   left: FaceId,
   right: FaceId,

@@ -12,8 +12,8 @@ import { cross2, sub2, type Vec2 } from '../geometry/vec.ts';
 import { adjacency, getVertex, materialPolygon } from '../paper/creasePattern.ts';
 import type { EdgeId, FaceId, VertexId } from '../paper/types.ts';
 import { derivePlacements, faceSideOfLine, flatFoldAngle } from '../state/derive.ts';
-import { flatView, overlapPairs, type FlatView } from '../state/flat.ts';
-import { orderOf, pairKey, parsePairKey } from '../state/order.ts';
+import { flatView, overlapPairs, overlapPairsTouching, type FlatView } from '../state/flat.ts';
+import { orderOf, type PairKey, pairKey, parsePairKey } from '../state/order.ts';
 import type { KernelState } from '../state/types.ts';
 
 export type InvariantCode =
@@ -40,14 +40,26 @@ export interface Violation {
 }
 
 /**
+ * Restrict checking to constraints that involve at least one of these faces. Sound when
+ * the state was produced from a valid state by a move that changed only these faces
+ * (new faces, and faces whose placement or layer relations changed): every constraint
+ * among untouched faces is exactly as it was, and it held then.
+ */
+export interface CheckScope {
+  readonly changed: ReadonlySet<FaceId>;
+}
+
+/**
  * Check the invariants of brief section 3 on a state:
  *  1 isometry, 2 connectivity, 3 consistency, 4 no penetration (flat layer-order
  *  constraints), 5 Maekawa and Kawasaki at flat interior vertices.
  * (6, determinism, is a property of the op log and is tested in history tests.)
  *
- * Returns every violation found; an empty array means the state is valid.
+ * Returns every violation found; an empty array means the state is valid. With a scope,
+ * only constraints touching the changed faces are checked (moves use this; tests use the
+ * full check, and property tests compare the two).
  */
-export function checkInvariants(state: KernelState): Violation[] {
+export function checkInvariants(state: KernelState, scope?: CheckScope): Violation[] {
   const out: Violation[] = [];
   checkTopology(state, out);
   if (out.length) return out;
@@ -57,12 +69,16 @@ export function checkInvariants(state: KernelState): Violation[] {
     out.push({ code: 'not-flat', message: 'Phase 0 kernel states must lie flat' });
     return out;
   }
-  checkConnectivity(state, out);
-  checkConsistency(state, view, out);
-  checkLayerOrder(state, view, out);
-  checkFlatVertices(state, out);
+  const changed = scope?.changed ?? null;
+  checkConnectivity(state, out, changed);
+  checkConsistency(state, view, out, changed);
+  checkLayerOrder(state, view, out, changed);
+  checkFlatVertices(state, out, changed);
   return out;
 }
+
+const touches = (changed: ReadonlySet<FaceId> | null, ...faces: Array<FaceId | null>) =>
+  changed === null || faces.some((f) => f !== null && changed.has(f));
 
 export function isValid(state: KernelState): boolean {
   return checkInvariants(state).length === 0;
@@ -132,13 +148,14 @@ function checkIsometry(state: KernelState, out: Violation[]): void {
 
 // --- 2. connectivity --------------------------------------------------------
 
-function checkConnectivity(state: KernelState, out: Violation[]): void {
+function checkConnectivity(state: KernelState, out: Violation[], changed: ReadonlySet<FaceId> | null): void {
   const { cp } = state;
   const adj = adjacency(cp);
   const tol = state.tol.len;
   for (const c of cp.creases.values()) {
     const ef = adj.edgeFaces.get(c.id)!;
     if (ef.left === null || ef.right === null) continue;
+    if (!touches(changed, ef.left, ef.right)) continue;
     const tl = state.folded.placements.get(ef.left)!;
     const tr = state.folded.placements.get(ef.right)!;
     for (const v of c.v) {
@@ -160,11 +177,17 @@ function checkConnectivity(state: KernelState, out: Violation[]): void {
 
 // --- 3. consistency ---------------------------------------------------------
 
-function checkConsistency(state: KernelState, view: FlatView, out: Violation[]): void {
+function checkConsistency(
+  state: KernelState,
+  view: FlatView,
+  out: Violation[],
+  changed: ReadonlySet<FaceId> | null,
+): void {
   const { cp } = state;
   const adj = adjacency(cp);
   for (const c of cp.creases.values()) {
     const ef = adj.edgeFaces.get(c.id)!;
+    if (!touches(changed, ef.left, ef.right)) continue;
     if (ef.left === null || ef.right === null) {
       if (c.angleDeg !== 0) out.push({ code: 'consistency', message: `Raw edge ${c.id} has a fold angle`, edges: [c.id] });
       continue;
@@ -186,6 +209,7 @@ function checkConsistency(state: KernelState, view: FlatView, out: Violation[]):
   const root = view.faceIds[0]!;
   const derived = derivePlacements(cp, root, state.folded.placements.get(root)!);
   for (const [f, tr] of state.folded.placements) {
+    if (!touches(changed, f)) continue;
     const d = derived.get(f);
     if (!d) {
       out.push({ code: 'consistency', message: `Face ${f} is not connected to the sheet`, faces: [f] });
@@ -215,18 +239,23 @@ interface WorldEdge {
   readonly taco: boolean;
 }
 
-function between(order: ReadonlyMap<string, 1 | -1>, x: FaceId, a: FaceId, b: FaceId): boolean | null {
+function between(order: ReadonlyMap<PairKey, 1 | -1>, x: FaceId, a: FaceId, b: FaceId): boolean | null {
   const oa = orderOf(order, x, a);
   const ob = orderOf(order, x, b);
   if (oa === undefined || ob === undefined) return null;
   return oa !== ob;
 }
 
-function checkLayerOrder(state: KernelState, view: FlatView, out: Violation[]): void {
+function checkLayerOrder(
+  state: KernelState,
+  view: FlatView,
+  out: Violation[],
+  changed: ReadonlySet<FaceId> | null,
+): void {
   const order = state.folded.layerOrder;
   const tol = state.tol;
-  const pairs = overlapPairs(state);
-  const overlapping = new Set<string>();
+  const pairs = changed === null ? overlapPairs(state) : overlapPairsTouching(state, changed);
+  const overlapping = new Set<PairKey>();
   const neighbors = new Map<FaceId, Set<FaceId>>();
   for (const [f, g] of pairs) {
     const key = pairKey(f, g);
@@ -242,22 +271,44 @@ function checkLayerOrder(state: KernelState, view: FlatView, out: Violation[]): 
   for (const key of order.keys()) {
     if (!overlapping.has(key)) {
       const [f, g] = parsePairKey(key);
+      if (!touches(changed, f, g)) continue;
       out.push({ code: 'order-stale', message: `Faces ${f} and ${g} have an order but don't overlap`, faces: [f, g] });
     }
   }
 
   // Transitivity: no 3-cycle among faces sharing a common region.
-  for (const [f, g] of pairs) {
-    for (const h of neighbors.get(f)!) {
-      if (h <= g || !neighbors.get(g)!.has(h)) continue;
-      const fg = orderOf(order, f, g);
-      const gh = orderOf(order, g, h);
-      const hf = orderOf(order, h, f);
-      if (fg === undefined || gh === undefined || hf === undefined) continue;
-      if (fg === gh && gh === hf) {
-        const common = intersectConvex(intersectConvex(view.poly.get(f)!, view.poly.get(g)!), view.poly.get(h)!);
-        if (isFat(common, tol)) {
-          out.push({ code: 'order-cycle', message: `Faces ${f}, ${g}, ${h} are stacked in a loop`, faces: [f, g, h] });
+  const checkTriple = (f: FaceId, g: FaceId, h: FaceId) => {
+    const fg = orderOf(order, f, g);
+    const gh = orderOf(order, g, h);
+    const hf = orderOf(order, h, f);
+    if (fg === undefined || gh === undefined || hf === undefined) return;
+    if (fg === gh && gh === hf) {
+      const common = intersectConvex(intersectConvex(view.poly.get(f)!, view.poly.get(g)!), view.poly.get(h)!);
+      if (isFat(common, tol)) {
+        out.push({ code: 'order-cycle', message: `Faces ${f}, ${g}, ${h} are stacked in a loop`, faces: [f, g, h] });
+      }
+    }
+  };
+  if (changed === null) {
+    for (const [f, g] of pairs) {
+      for (const h of neighbors.get(f)!) {
+        if (h > g && neighbors.get(g)!.has(h)) checkTriple(f, g, h);
+      }
+    }
+  } else {
+    // Every triple with a changed face, once: from its smallest changed face c. Two
+    // unchanged faces overlap iff they have an order (the previous state was valid).
+    const overlaps = (a: FaceId, b: FaceId): boolean =>
+      changed.has(a) || changed.has(b) ? neighbors.get(a)?.has(b) === true : order.has(pairKey(a, b));
+    for (const c of [...changed].sort((x, y) => x - y)) {
+      const around = [...(neighbors.get(c) ?? [])].sort((x, y) => x - y);
+      for (let i = 0; i < around.length; i++) {
+        const a = around[i]!;
+        if (changed.has(a) && a < c) continue;
+        for (let j = i + 1; j < around.length; j++) {
+          const b = around[j]!;
+          if (changed.has(b) && b < c) continue;
+          if (overlaps(a, b)) checkTriple(c, a, b);
         }
       }
     }
@@ -282,6 +333,7 @@ function checkLayerOrder(state: KernelState, view: FlatView, out: Violation[]): 
     // Edge vs edge on the same line.
     for (let j = i + 1; j < edges.length; j++) {
       const k = edges[j]!;
+      if (!touches(changed, e.left, e.right, k.left, k.right)) continue;
       if (Math.abs(signedDistance(e.line, k.a)) > tol.len || Math.abs(signedDistance(e.line, k.b)) > tol.len) continue;
       if (collinearOverlap(e.a, e.b, k.a, k.b, e.line.d) <= tol.len) continue;
       const shared = new Set([e.left, e.right, k.left, k.right]);
@@ -291,6 +343,7 @@ function checkLayerOrder(state: KernelState, view: FlatView, out: Violation[]): 
     // Edge vs a face whose interior it crosses.
     for (const f of view.faceIds) {
       if (f === e.left || f === e.right) continue;
+      if (!touches(changed, f, e.left, e.right)) continue;
       if (!boxesOverlap(eBox, view.box.get(f)!)) continue;
       if (segmentLengthInside(e.a, e.b, view.poly.get(f)!, tol) <= tol.len) continue;
       if (e.taco) {
@@ -372,10 +425,11 @@ function checkEdgePair(state: KernelState, view: FlatView, e: WorldEdge, k: Worl
 
 // --- 5. Maekawa and Kawasaki --------------------------------------------------
 
-function checkFlatVertices(state: KernelState, out: Violation[]): void {
+function checkFlatVertices(state: KernelState, out: Violation[], changed: ReadonlySet<FaceId> | null): void {
   const { cp } = state;
   const adj = adjacency(cp);
   for (const [v, edgeIds] of adj.vertexEdges) {
+    if (changed !== null && !(adj.vertexFaces.get(v) ?? []).some((f) => changed.has(f))) continue;
     const creases = edgeIds.map((e) => cp.creases.get(e)!);
     if (creases.some((c) => c.assignment === 'B')) continue; // on the sheet's edge
     if (creases.some((c) => c.angleDeg !== 0 && Math.abs(c.angleDeg) !== 180)) continue; // not flat
