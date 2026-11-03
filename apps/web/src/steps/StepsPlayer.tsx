@@ -115,7 +115,7 @@ function compose(step: PlayerStep, p: number, mode: 'real' | 'ideal'): SceneFram
       hands.push({ key: 'hold', pose: 'hold', side: h.hand, at: [h.at[0], frame.topHeight * 0.5 + 0.2, -h.at[1]], toward: [-toLine[0], -toLine[1]], opacity: handOpacity });
     }
     const lift = step.hands.liftModel ? 12 * Math.sin(Math.PI * span(p, 0, BEAT.moveEnd + 0.05)) : 0;
-    return { frame, hands, symbols: 1 - span(p, BEAT.moveEnd, BEAT.pause), pulse: p > BEAT.moveEnd && p < BEAT.pause ? span(p, BEAT.moveEnd, BEAT.pause) : 0, lift, matrix: null, top: frame.topHeight };
+    return { frame, hands: fadeOverLine(hands, foldSegment(step)), symbols: 1 - span(p, BEAT.moveEnd, BEAT.pause), pulse: p > BEAT.moveEnd && p < BEAT.pause ? span(p, BEAT.moveEnd, BEAT.pause) : 0, lift, matrix: null, top: frame.topHeight };
   }
 
   // Turn over / rotate: the whole model swings into its new pose.
@@ -147,6 +147,43 @@ function compose(step: PlayerStep, p: number, mode: 'real' | 'ideal'): SceneFram
     hands.push({ key: 'nail', pose: 'nail', side: 'right', at: [q[0], frame.topHeight + 0.3, -q[1]], toward: [0, 1], opacity: 0.42 * Math.min(handsIn, handsOut) });
   }
   return { frame, hands, symbols: 1 - span(p, 0.6, 0.8), pulse: 0, lift: 0, matrix, top: frame.topHeight };
+}
+
+/** The step's fold line on the table, from its diagram symbols. */
+function foldSegment(step: PlayerStep): [Vec2, Vec2] | null {
+  const s = step.symbols.find((x) => x.kind === 'valley-line' || x.kind === 'mountain-line');
+  return s && (s.kind === 'valley-line' || s.kind === 'mountain-line') ? [s.a, s.b] : null;
+}
+
+function segmentDistance(a: Vec2, b: Vec2, c: Vec2, d: Vec2): number {
+  const cross = (o: Vec2, p: Vec2, q: Vec2) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  if (Math.sign(cross(a, b, c)) !== Math.sign(cross(a, b, d)) && Math.sign(cross(c, d, a)) !== Math.sign(cross(c, d, b))) return 0;
+  const toSeg = (p: Vec2, u: Vec2, v: Vec2) => {
+    const dx = v[0] - u[0];
+    const dy = v[1] - u[1];
+    const t = Math.max(0, Math.min(1, ((p[0] - u[0]) * dx + (p[1] - u[1]) * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(u[0] + dx * t - p[0], u[1] + dy * t - p[1]);
+  };
+  return Math.min(toSeg(a, c, d), toSeg(b, c, d), toSeg(c, a, b), toSeg(d, a, b));
+}
+
+/**
+ * Hands never cover the fold line (brief, section 7): a hand whose body lies over the line
+ * fades to a ghost. The body runs back from the fingertip, away from where the fingers point.
+ */
+function fadeOverLine(hands: HandView[], seg: [Vec2, Vec2] | null): HandView[] {
+  if (!seg) return hands;
+  return hands.map((h) => {
+    if (h.key === 'nail') return h; // the fingernail creases the line: it belongs there
+    const l = Math.hypot(h.toward[0], h.toward[1]) || 1;
+    const u: Vec2 = [h.toward[0] / l, h.toward[1] / l];
+    const tip: Vec2 = [h.at[0], -h.at[2]];
+    const from: Vec2 = [tip[0] - u[0] * 18, tip[1] - u[1] * 18];
+    const to: Vec2 = [tip[0] - u[0] * 95, tip[1] - u[1] * 95];
+    const d = segmentDistance(from, to, seg[0], seg[1]);
+    const k = Math.max(0.3, Math.min(1, (d - 6) / 22));
+    return { ...h, opacity: h.opacity * k };
+  });
 }
 
 function pushDir(step: PlayerStep): [number, number] {

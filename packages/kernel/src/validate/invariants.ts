@@ -1,5 +1,6 @@
 import { lineThrough, signedDistance, type Line2 } from '../geometry/line.ts';
 import {
+  type Box,
   boxesOverlap,
   collinearOverlap,
   intersectConvex,
@@ -327,48 +328,60 @@ function checkLayerOrder(
     edges.push({ id: c.id, a, b, line: l, left: ef.left, right: ef.right, taco });
   }
 
-  for (let i = 0; i < edges.length; i++) {
-    const e = edges[i]!;
-    const eBox = { minX: Math.min(e.a[0], e.b[0]), maxX: Math.max(e.a[0], e.b[0]), minY: Math.min(e.a[1], e.b[1]), maxY: Math.max(e.a[1], e.b[1]) };
-    // Edge vs edge on the same line.
-    for (let j = i + 1; j < edges.length; j++) {
-      const k = edges[j]!;
-      if (!touches(changed, e.left, e.right, k.left, k.right)) continue;
-      if (Math.abs(signedDistance(e.line, k.a)) > tol.len || Math.abs(signedDistance(e.line, k.b)) > tol.len) continue;
-      if (collinearOverlap(e.a, e.b, k.a, k.b, e.line.d) <= tol.len) continue;
-      const shared = new Set([e.left, e.right, k.left, k.right]);
-      if (shared.size < 4) continue;
-      checkEdgePair(state, view, e, k, out);
-    }
-    // Edge vs a face whose interior it crosses.
-    for (const f of view.faceIds) {
-      if (f === e.left || f === e.right) continue;
-      if (!touches(changed, f, e.left, e.right)) continue;
-      if (!boxesOverlap(eBox, view.box.get(f)!)) continue;
-      if (segmentLengthInside(e.a, e.b, view.poly.get(f)!, tol) <= tol.len) continue;
-      if (e.taco) {
-        const b = between(order, f, e.left, e.right);
-        if (b === true) {
-          out.push({
-            code: 'taco-tortilla',
-            message: `Face ${f} passes through the fold at edge ${e.id}`,
-            faces: [f, e.left, e.right],
-            edges: [e.id],
-          });
-        }
-      } else {
-        const ol = orderOf(order, e.left, f);
-        const or = orderOf(order, e.right, f);
-        if (ol !== undefined && or !== undefined && ol !== or) {
-          out.push({
-            code: 'tortilla-tortilla',
-            message: `Face ${f} cuts through the sheet at edge ${e.id}`,
-            faces: [f, e.left, e.right],
-            edges: [e.id],
-          });
-        }
+  // Scoped: a constraint matters only if one of its faces changed. Enumerate just those
+  // (edges touching a changed face against everything; the rest only against changed faces),
+  // instead of filtering all E² edge pairs and E·F edge–face pairs.
+  const hot = edges.map((e) => changed === null || changed.has(e.left) || changed.has(e.right));
+  const hotIdx: number[] = [];
+  for (let i = 0; i < edges.length; i++) if (hot[i]) hotIdx.push(i);
+  const changedFaces = changed === null ? view.faceIds : view.faceIds.filter((f) => changed.has(f));
+
+  const edgePair = (e: WorldEdge, k: WorldEdge) => {
+    if (Math.abs(signedDistance(e.line, k.a)) > tol.len || Math.abs(signedDistance(e.line, k.b)) > tol.len) return;
+    if (collinearOverlap(e.a, e.b, k.a, k.b, e.line.d) <= tol.len) return;
+    if (e.left === k.left || e.left === k.right || e.right === k.left || e.right === k.right) return;
+    checkEdgePair(state, view, e, k, out);
+  };
+  const edgeFace = (e: WorldEdge, eBox: Box, f: FaceId) => {
+    if (f === e.left || f === e.right) return;
+    if (!boxesOverlap(eBox, view.box.get(f)!)) return;
+    if (segmentLengthInside(e.a, e.b, view.poly.get(f)!, tol) <= tol.len) return;
+    if (e.taco) {
+      const b = between(order, f, e.left, e.right);
+      if (b === true) {
+        out.push({
+          code: 'taco-tortilla',
+          message: `Face ${f} passes through the fold at edge ${e.id}`,
+          faces: [f, e.left, e.right],
+          edges: [e.id],
+        });
+      }
+    } else {
+      const ol = orderOf(order, e.left, f);
+      const or = orderOf(order, e.right, f);
+      if (ol !== undefined && or !== undefined && ol !== or) {
+        out.push({
+          code: 'tortilla-tortilla',
+          message: `Face ${f} cuts through the sheet at edge ${e.id}`,
+          faces: [f, e.left, e.right],
+          edges: [e.id],
+        });
       }
     }
+  };
+
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i]!;
+    const eBox: Box = { minX: Math.min(e.a[0], e.b[0]), maxX: Math.max(e.a[0], e.b[0]), minY: Math.min(e.a[1], e.b[1]), maxY: Math.max(e.a[1], e.b[1]) };
+    // Edge vs edge on the same line: each unordered pair once, if either edge is hot.
+    if (hot[i]) {
+      for (let j = i + 1; j < edges.length; j++) edgePair(e, edges[j]!);
+    } else {
+      for (const j of hotIdx) if (j > i) edgePair(e, edges[j]!);
+    }
+    // Edge vs a face whose interior it crosses.
+    if (hot[i]) for (const f of view.faceIds) edgeFace(e, eBox, f);
+    else for (const f of changedFaces) edgeFace(e, eBox, f);
   }
 }
 

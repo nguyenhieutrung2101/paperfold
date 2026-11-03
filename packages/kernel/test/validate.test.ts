@@ -63,3 +63,35 @@ describe('the validator catches broken states', () => {
     expect(c.has('taco-tortilla') || c.has('order-cycle')).toBe(true);
   });
 });
+
+describe('scoped checks (what a move runs) agree with the full check', () => {
+  // The scoped check is sound only for corruptions that touch a changed face: that's the
+  // contract a move relies on (everything else was valid before it).
+  const scopedCodes = (s: KernelState, changed: number[]) => new Set(checkInvariants(s, { changed: new Set(changed) }).map((v) => v.code));
+
+  it('a sheet slipped inside a fold is caught when any of its faces changed', () => {
+    const s = mustApply(bookFold(), foldMove([-30, 0], [0, 1], [-45, 0], 1));
+    const st = stackAt(s, [-20, 0]);
+    if (!st.ok) throw new Error('no stack');
+    const [top, middle, bottom] = st.faces as [number, number, number];
+    const broken = withOrder(s, (m) => {
+      setOrder(m, bottom, top, -1);
+      setOrder(m, bottom, middle, 1);
+    });
+    for (const f of [top, middle, bottom]) {
+      const c = scopedCodes(broken, [f]);
+      expect(c.has('taco-tortilla') || c.has('order-cycle'), `changed face ${f}`).toBe(true);
+    }
+    // Valid states pass the scoped check whatever the scope.
+    expect(checkInvariants(s, { changed: new Set(s.cp.faces.keys()) })).toEqual([]);
+    expect(checkInvariants(s, { changed: new Set([top]) })).toEqual([]);
+  });
+
+  it('a missing order is caught from either face', () => {
+    const s = bookFold();
+    const [f, g] = [...s.cp.faces.keys()] as [number, number];
+    const broken = withOrder(s, (m) => m.delete(pairKey(f, g)));
+    expect(scopedCodes(broken, [f]).has('order-missing')).toBe(true);
+    expect(scopedCodes(broken, [g]).has('order-missing')).toBe(true);
+  });
+});

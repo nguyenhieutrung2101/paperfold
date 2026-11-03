@@ -8,7 +8,12 @@ pnpm dev          # http://localhost:5173
 pnpm test         # unit, property and gate tests (Vitest)
 pnpm typecheck
 pnpm e2e          # Playwright (starts its own Vite on :4321)
+PROPERTY_RUNS=3000 PROPERTY_SEED=random pnpm test   # heavier property run on fresh sequences
 ```
+
+Property tests use a fixed seed by default, so `pnpm test` gives the same result every time;
+`PROPERTY_SEED=<n>` picks other sequences and `random` lets fast-check choose (a failure prints its
+seed).
 
 ## The gate
 
@@ -84,7 +89,7 @@ plain "Fold": a wrong name is worse than none.
 
 - Cleans the op log: a fold and its crease are one step, fold-then-unfold is a precrease, turn-overs
   that cancel are dropped.
-- Names each step, writes its caption as data ("Fold the bottom right corner up to the top left
+- Names each step, writes its caption as data ("Fold the bottom right corner to the top left
   corner.", "Push the tip inside."), rendered by `strings.en.ts`.
 - Yoshizawa–Randlett symbols: valley and mountain lines, valley, mountain and fold-and-unfold
   arrows, the push arrow, turn-over and rotate icons.
@@ -107,11 +112,61 @@ plain "Fold": a wrong name is worse than none.
 
 ## Tests
 
-TESTS_PLACEHOLDER
+- **118 Vitest tests** in 14 files, all green:
+  - kernel 57: folds, refusals, unfold and refold, burnish, turn and rotate, FOLD import failing
+    closed, reverse-fold fixtures, recognition, validator negatives (scoped and full), 6 property
+    suites;
+  - intent 22: every axiom, snapping priorities, candidates and Tab order, gestures;
+  - skin 15: bend developability, wraps, frames, reverse-fold landing and opening;
+  - steps 20: the 12 gate tests, cleanup, captions, hands, handedness;
+  - app 4: fold animation.
+- **Property tests** run random sequences on a fixed seed by default. A heavier run
+  (`PROPERTY_RUNS=3000 PROPERTY_SEED=random`) attempted 7,483 folds (5,079 accepted) and 3,027
+  reverse folds on closed flaps (960 accepted), reached 128 faces, and found no invariant violation.
+  Every accepted state is re-checked from scratch, so a scoped check that missed something would fail.
+- **6 Playwright tests** in headless Chromium: corner-to-corner fold, crease, undo and redo; a joined
+  top layer offered as "Fold both layers"; a held fold resisting, with the hint on the second try;
+  the inside reverse fold with the chip, Tab and verified steps; folding with the keyboard; the Bend
+  lab.
 
 ## Measured
 
-MEASURED_PLACEHOLDER
+Node 22 in this container (no GPU), median-ish of a few runs; the browser adds the worker round trip
+and structured cloning on top.
+
+**Many faces, few layers** (the brief's target shape): a 150 mm sheet precreased on a 22 × 22 grid,
+folded in half 0–3 times along grid lines, then a corner fold of every layer.
+
+| faces | layers | commit (fold + scoped checks) | full validation | all candidates for one drag | static frame | moving frame |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 501 | 1 | 22.3 ms | 21.5 ms | 23.8 ms (1) | 26.6 ms | 46.2 ms |
+| 500 | 2 | 20.2 ms | 25.0 ms | 20.8 ms (4) | 22.8 ms | 37.4 ms |
+| 516 | 4 | 35.2 ms | 28.6 ms | 33.4 ms (6) | 22.4 ms | 37.5 ms |
+| 568 | 8 | 45.4 ms | 69.4 ms | 48.4 ms (6) | 23.7 ms | 44.7 ms |
+
+**Worst case**: repeated halving of every layer, so every face overlaps every other.
+
+| faces | layers | commit | full validation | all candidates | static frame | moving frame |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 16 | 4.3 ms | 1.2 ms | 12.1 ms (6) | 1.7 ms | 7.2 ms |
+| 32 | 32 | 6.2 ms | 2.8 ms | 21.4 ms (6) | 1.5 ms | 8.7 ms |
+| 64 | 64 | 24.8 ms | 9.6 ms | 85.1 ms (6) | 3.1 ms | 14.5 ms |
+| 128 | 128 | 85.8 ms | 63.1 ms | 616.9 ms (6) | 7.1 ms | 35.4 ms |
+
+Against the brief's budget (500 faces, 32 layers):
+- **Commits** are within 100 ms.
+- **Candidates** are about at the 30 ms line: 21–48 ms for every reading of one drag at 500 faces.
+  The worker validates them all before answering. Answering with the first valid one, then the
+  rest, is the next step.
+- **The skin is the bottleneck**: rebuilding the moving mesh takes 37–46 ms per frame at 500 faces,
+  so a drag there runs at about 20 fps, not 60. Moving the bend into a vertex shader (static
+  geometry, uniforms for line, θ and ρ) is the fix, planned for Phase 2.
+- Deep towers past 32 layers are slow, as expected from the pairwise model.
+
+While measuring, I found the scoped (incremental) check was slower than the full one: it filtered
+every crease pair instead of enumerating only those touching changed faces. Fixed: a 268-face corner
+fold's check went from 25 ms to 3.9 ms, and the commit from 29 ms to 9 ms. Tests now compare scoped
+with full checks.
 
 ## What doesn't work yet, or is approximated
 
@@ -128,11 +183,12 @@ MEASURED_PLACEHOLDER
   from Phase 0).
 - **Thickness fillets add ≈π·r of paper per folded edge; the partial-crease blend is not
   developable** (ADR-010, ADR-011; unchanged).
-- **Hands are stylized** capsules that ride the paper. They don't grip or deform it.
+- **Hands are stylized** capsules that ride the paper. They don't grip or deform it. They fade where
+  their body would lie over the fold line, but they can still hide parts of a small model.
 - **Steps**: captions name a target landmark only when the fold lands on one. No diagram export (SVG,
   PDF) yet, and no .fold frame per step; both are Phase 2.
-- **The skin rebuilds the whole mesh each frame** during a drag (the vertex-shader bend is Phase 2).
-  Fine for these models; not measured on an iPad.
+- **The skin rebuilds the whole mesh each frame** during a drag: about 20 fps at 500 faces (see
+  Measured). The vertex-shader bend is Phase 2. Not measured on an iPad.
 - **In this container** the browser renders through SwiftShader on the CPU at 2–5 fps, so the
   Playwright tests use generous timeouts. Real GPUs aren't measured here.
 - **Paper physics numbers are still placeholders** (ADR-015). No sound or haptics yet. No screenshot

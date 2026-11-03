@@ -181,13 +181,14 @@ const dirWords: Record<Direction, string> = {
 export function captionText(c: Caption): string {
   switch (c.kind) {
     case 'fold': {
-      const to = c.to ? ` to ${targetText(c.to)}` : '';
+      // A landmark says where it goes; a direction is only needed without one.
+      const where = c.to ? `to ${targetText(c.to)}` : dirWords[c.dir];
       const behind = c.mountain ? ' behind' : '';
-      return `Fold ${placeText(c.from)}${behind} ${dirWords[c.dir]}${to}.`;
+      return `Fold ${placeText(c.from)}${behind} ${where}.`;
     }
     case 'precrease': {
-      const to = c.to ? ` to ${targetText(c.to)}` : '';
-      return `Fold ${placeText(c.from)} ${dirWords[c.dir]}${to}, crease, then unfold.`;
+      const where = c.to ? `to ${targetText(c.to)}` : dirWords[c.dir];
+      return `Fold ${placeText(c.from)} ${where}, crease, then unfold.`;
     }
     case 'unfold':
       return `Unfold ${placeText(c.from)}.`;

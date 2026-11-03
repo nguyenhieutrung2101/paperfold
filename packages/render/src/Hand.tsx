@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CapsuleGeometry, Color, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
+import { CapsuleGeometry, Color, EqualDepth, MeshBasicMaterial, MeshStandardMaterial, Quaternion, Vector3 } from 'three';
 
 export type HandPoseName = 'pinch' | 'hold' | 'push' | 'nail';
 
@@ -12,6 +12,8 @@ export interface HandProps {
   readonly toward: readonly [number, number];
   readonly opacity: number;
   readonly color?: string;
+  /** Overall size; 1 is a real adult hand. Slightly smaller reads better over a 15 cm sheet. */
+  readonly scale?: number;
 }
 
 /** Segment pitches (degrees, negative = pointing down) from knuckle to tip, per finger. */
@@ -70,7 +72,7 @@ function chain(knuckle: Vector3, pitches: readonly number[], lengths: readonly n
  * hiding the paper. Built so the working fingertip sits exactly on `at`, with the fingers
  * reaching toward it from outside.
  */
-export function Hand({ pose, side, at, toward, opacity, color = '#aeb6bf' }: HandProps) {
+export function Hand({ pose, side, at, toward, opacity, color = '#aeb6bf', scale = 0.8 }: HandProps) {
   const def = POSES[pose];
   const caps = useMemo(() => {
     // Local frame: x forward (fingers), y up, z toward the pinky. Index tip at the origin.
@@ -105,8 +107,12 @@ export function Hand({ pose, side, at, toward, opacity, color = '#aeb6bf' }: Han
     return out;
   }, [def]);
 
+  // Two passes so the hand is one even veil: depth first, then color only where the nearest
+  // surface is. Overlapping capsules would otherwise stack their transparency into a solid gray.
+  const depthOnly = useMemo(() => new MeshBasicMaterial({ colorWrite: false, depthWrite: true }), []);
   const material = useMemo(
-    () => new MeshStandardMaterial({ color: new Color(color), transparent: true, opacity, roughness: 0.65, depthWrite: false }),
+    () =>
+      new MeshStandardMaterial({ color: new Color(color), transparent: true, opacity, roughness: 0.65, depthWrite: false, depthFunc: EqualDepth }),
     [color, opacity],
   );
   const geoms = useMemo(() => caps.map((c) => new CapsuleGeometry(c.radius, Math.max(0.01, c.length), 4, 10)), [caps]);
@@ -115,9 +121,12 @@ export function Hand({ pose, side, at, toward, opacity, color = '#aeb6bf' }: Han
   const yaw = Math.atan2(-toward[1], toward[0]);
   const mirror = side === 'left' ? -1 : 1;
   return (
-    <group position={[at[0], at[1] + 1.5, at[2]]} rotation={[0, yaw, 0]} scale={[1, 1, mirror]}>
+    <group position={[at[0], at[1] + 1.5, at[2]]} rotation={[0, yaw, 0]} scale={[scale, scale, mirror * scale]}>
       {caps.map((c, i) => (
-        <mesh key={i} geometry={geoms[i]!} material={material} position={c.mid} quaternion={c.q} renderOrder={10} />
+        <mesh key={`d${i}`} geometry={geoms[i]!} material={depthOnly} position={c.mid} quaternion={c.q} renderOrder={9} />
+      ))}
+      {caps.map((c, i) => (
+        <mesh key={`c${i}`} geometry={geoms[i]!} material={material} position={c.mid} quaternion={c.q} renderOrder={10} />
       ))}
     </group>
   );

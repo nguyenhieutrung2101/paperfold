@@ -54,6 +54,10 @@ function runSequence(specs: readonly MoveSpec[], start: KernelState = sheet()): 
 }
 
 const numRuns = Number(process.env.PROPERTY_RUNS ?? 120);
+// Reproducible by default: the same sequences on every run. PROPERTY_SEED=<n> picks other
+// sequences; PROPERTY_SEED=random lets fast-check choose (it prints the seed of a failure).
+const seedEnv = process.env.PROPERTY_SEED;
+const seed = seedEnv === 'random' ? {} : { seed: Number(seedEnv ?? 20261103) };
 
 describe('kernel properties', () => {
   it('random move sequences keep every invariant', () => {
@@ -61,7 +65,7 @@ describe('kernel properties', () => {
       fc.property(fc.array(specArb, { minLength: 1, maxLength: 14 }), (specs) => {
         runSequence(specs);
       }),
-      { numRuns },
+      { numRuns, ...seed },
     );
     // The property must not hold vacuously.
     if (process.env.PROPERTY_STATS) console.log(stats);
@@ -73,7 +77,7 @@ describe('kernel properties', () => {
       fc.property(fc.array(specArb, { minLength: 15, maxLength: 30 }), (specs) => {
         runSequence(specs);
       }),
-      { numRuns: Math.max(40, Math.ceil(numRuns / 4)) },
+      { numRuns: Math.max(40, Math.ceil(numRuns / 4)), ...seed },
     );
     if (process.env.PROPERTY_STATS) console.log(stats);
     // Deep runs must reach genuinely multi-layer states.
@@ -86,7 +90,7 @@ describe('kernel properties', () => {
       fc.property(fc.nat(1), fc.array(specArb, { minLength: 1, maxLength: 10 }), (which, specs) => {
         runSequence(specs, starts[which]!);
       }),
-      { numRuns },
+      { numRuns, ...seed },
     );
     if (process.env.PROPERTY_STATS) console.log(stats);
     expect(stats.reverseAccepted).toBeGreaterThan(0);
@@ -99,7 +103,7 @@ describe('kernel properties', () => {
         const rebuilt = replay(sheet(), opLog(h).map((op) => op.move));
         expect(stateHash(rebuilt)).toBe(currentNode(h).hash);
       }),
-      { numRuns: Math.ceil(numRuns / 2) },
+      { numRuns: Math.ceil(numRuns / 2), ...seed },
     );
   });
 
@@ -121,7 +125,7 @@ describe('kernel properties', () => {
         }
         expect(stateHash(currentState(u))).toBe(currentNode(h).hash);
       }),
-      { numRuns: Math.ceil(numRuns / 2) },
+      { numRuns: Math.ceil(numRuns / 2), ...seed },
     );
   });
 
@@ -145,7 +149,7 @@ describe('kernel properties', () => {
           if (r1.ok && r2.ok) expect(stateHash(r2.state)).toBe(stateHash(r1.state));
         }
       }),
-      { numRuns: Math.ceil(numRuns / 2) },
+      { numRuns: Math.ceil(numRuns / 2), ...seed },
     );
   });
 });

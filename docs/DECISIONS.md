@@ -116,7 +116,8 @@ the opposite. We negate it once in `geometry/predicates.ts` and pin the conventi
 
 ## ADR-018 · Test strategy
 
-Unit tests per module; fast-check property tests over random move sequences whose fold lines are
+Unit tests per module; fast-check property tests (fixed seed by default since Phase 1, so the suite
+is reproducible; `PROPERTY_SEED` varies it) over random move sequences whose fold lines are
 deliberately degenerate (through existing vertices, along existing creases, corner-to-corner
 bisectors, 22.5° families) and that assert every invariant, replay determinism, exact undo/redo
 and FOLD round-trips; negative tests proving the validator catches broken states; Playwright smoke
@@ -255,7 +256,10 @@ per-region heights for the bulge.
 **Chose** fixed beats per step (hands in, the move, a pause, the crease, unfold for precreases, hands
 out) over 3.2 s at 1×. Hands are procedural, semi-transparent capsules posed per hand plan (pinch,
 hold, push, nail) whose working fingertip sits exactly on the skin's point for the gripped material.
-A slow frame slows the film rather than skipping beats.
+Each hand is drawn as one even veil (a depth pass, then color only at the nearest surface, so
+overlapping fingers don't stack into solid gray) at 0.8 of real size. A hand whose body would lie
+over the fold line fades to 30 % (brief: hands never cover the fold line). A slow frame slows the
+film rather than skipping beats.
 
 ## ADR-035 · Partial-angle hinge moves deferred to Phase 2
 
