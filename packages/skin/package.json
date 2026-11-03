@@ -1,0 +1,16 @@
+{
+  "name": "@paperfold/skin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Realism layer: turns the kernel's exact flat state into soft, thick, two-sided paper geometry. Pure math, no three.js.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@paperfold/kernel": "workspace:*"
+  }
+}

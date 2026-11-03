@@ -1,0 +1,31 @@
+{
+  "name": "@paperfold/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "three.js / React Three Fiber rendering: paper material, table, lights, skin meshes.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@paperfold/kernel": "workspace:*",
+    "@paperfold/skin": "workspace:*"
+  },
+  "peerDependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "react": "19.3.1",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "@types/react": "19.3.0",
+    "@types/three": "0.187.0",
+    "react": "19.3.1",
+    "three": "0.187.0"
+  }
+}

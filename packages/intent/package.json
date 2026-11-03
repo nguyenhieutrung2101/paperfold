@@ -1,0 +1,16 @@
+{
+  "name": "@paperfold/intent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Turns pointer, touch and pen input into candidate moves. Phase 0: point-to-point fold lines and landmark snapping only.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@paperfold/kernel": "workspace:*"
+  }
+}
