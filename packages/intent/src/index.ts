@@ -1,11 +1,16 @@
 /**
- * @paperfold/intent: turns pointer input into candidate moves.
+ * @paperfold/intent: turns pointer, touch and pen input into candidate moves. It decides
+ * what you meant; the kernel decides what's possible.
  *
- * Phase 0 scope: point-to-point folding (the fold line is the perpendicular bisector of
- * where the grabbed point started and where it is now, Huzita–Justin axiom 2) with
- * snapping to corners, edge midpoints and existing creases. Candidate ranking, crease
- * strokes, holds and the remaining axioms arrive in Phase 1.
+ * - snap.ts: point-to-point folding snapped by the Huzita–Justin axioms 1–5 and 7.
+ * - candidates.ts: every move one drag could mean, and their order (Tab cycles).
+ * - gestures.ts: crease strokes vs grabs, and pushing a spine in along a precrease.
  */
+export * from './axioms.ts';
+export * from './snap.ts';
+export * from './candidates.ts';
+export * from './gestures.ts';
+import type { SnapContext } from './snap.ts';
 import {
   applyPlaneIso,
   cross2,
@@ -138,4 +143,24 @@ export function guessFold(
     }
   }
   return { line, seed: from, snappedFrom: sf, snappedTo: st, onCrease };
+}
+
+/** Everything snapping needs from a snapshot: landmarks, edge lines, crease lines. */
+export function snapContext(snap: Snapshot): SnapContext {
+  const points = landmarks(snap).map((l) => ({ point: l.point, kind: l.kind }));
+  const byId = new Map(snap.faces.map((f) => [f.id, f]));
+  const lines: Line2[] = [];
+  for (const c of snap.creases) {
+    const iso = planeIsoOf(byId.get((c.left ?? c.right)!)!.placement);
+    const a = applyPlaneIso(iso, c.a);
+    const b = applyPlaneIso(iso, c.b);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const l = Math.hypot(dx, dy);
+    if (l < 1e-6) continue;
+    const line: Line2 = { p: a, d: [dx / l, dy / l] };
+    if (lines.some((o) => Math.abs(cross2(o.d, line.d)) < 1e-9 && Math.abs(signedDistance(o, a)) < 1e-6)) continue;
+    lines.push(line);
+  }
+  return { points, lines, creases: creaseLines(snap) };
 }
