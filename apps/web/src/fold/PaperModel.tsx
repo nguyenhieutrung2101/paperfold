@@ -7,6 +7,9 @@ import { PRESETS } from '../presets.ts';
 import { useStore } from '../store.ts';
 import { foldPose, reducedMotion } from './motion.ts';
 
+/** The angle the live drag was showing, so a committed fold lands from there. */
+export let dragTheta = 0;
+
 const TURN_MS = 620;
 const ROTATE_MS = 360;
 
@@ -30,11 +33,32 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
   const staticFrame = useMemo(() => (snap && params ? buildFrame(snap, params) : null), [snap, params]);
   const [moving, setMoving] = useState<{ key: string; frame: SkinFrame } | null>(null);
   const settledKey = useRef<string>('');
+  const shownTheta = useRef(0);
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     const now = performance.now();
+    const { drag, creaseOverlay } = useStore.getState();
+    // The live drag: the kernel-validated candidate, at the angle the pointer asks for. The
+    // paper eases toward it (it never jumps), and trembles a little while it resists.
+    if (snap && params && drag?.preview) {
+      const target = drag.resisting ? Math.max(0, drag.theta - 0.35) : drag.theta;
+      shownTheta.current += (target - shownTheta.current) * Math.min(1, dt * 14);
+      const tremble = drag.resisting && !reducedMotion() ? 0.035 * Math.sin(now / 22) : 0;
+      dragTheta = shownTheta.current;
+      const motion = {
+        before: snap,
+        transition: drag.preview.transition,
+        theta: Math.max(0, Math.min(Math.PI, shownTheta.current + tremble)),
+        sharpnessAt: () => 0,
+      };
+      const frame = buildFrame(drag.preview.after, params, motion);
+      setMoving({ key: 'drag', frame });
+      settledKey.current = '';
+      return;
+    }
+    if (!drag) shownTheta.current = 0;
     if (snap && params && active) {
-      const pose = foldPose(active, snap, now, paperMode);
+      const pose = foldPose(active, snap, now, paperMode, creaseOverlay);
       const key = `${active.key}:${snap.hash}:${paperMode}`;
       if (!pose.motion) {
         if (moving) setMoving(null);
@@ -42,7 +66,6 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
       } else if (pose.animating || settledKey.current !== key || !moving) {
         const frame = buildFrame(snap, params, pose.motion);
         setMoving({ key, frame });
-        onTopHeight?.(frame.topHeight);
         settledKey.current = pose.animating ? '' : key;
       }
     } else if (moving) {
@@ -81,9 +104,11 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
     () => ({ ...p.look, front: frontColor, back: backColor }),
     [p, frontColor, backColor],
   );
+  // Input and overlays work on the resting stack's top surface, not on a soft fold's loft:
+  // a pointer aimed at a corner must land on that corner whatever the flap is doing.
+  if (staticFrame) onTopHeight?.(staticFrame.topHeight);
   const frame = moving?.frame ?? staticFrame;
   if (!frame) return null;
-  if (!moving) onTopHeight?.(frame.topHeight);
   return (
     <group ref={group}>
       <PaperMesh frame={frame} look={look} glowFaces={glow} fibers={p.fibers} />

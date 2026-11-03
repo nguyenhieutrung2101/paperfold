@@ -4,7 +4,9 @@ const PORT = 4321;
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 60_000,
+  timeout: 90_000,
+  // SwiftShader renders on the CPU (a few frames a second here): give the UI time to catch up.
+  expect: { timeout: 15_000 },
   retries: 0,
   reporter: 'list',
   use: {

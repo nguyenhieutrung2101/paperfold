@@ -13,7 +13,7 @@ The kernel decides what's possible; everything else reads from it.
                               └──────────┬───────────┘
                                          │ op log
                                     ┌────▼─────┐ steps ┌─────────────┐
-                                    │  steps   ├──────►│ step player │   (Phase 1+)
+                                    │  steps   ├──────►│ step player │
                                     └──────────┘       └─────────────┘
 ```
 
@@ -25,16 +25,18 @@ validated. Nothing appears as a fold unless the kernel produced it.
 | Package | Role | Depends on |
 | --- | --- | --- |
 | `packages/kernel` | Headless origami kernel. Pure TS, no DOM, no three.js, deterministic. `src/` compiles with `types: []`, so it can't reach a browser or Node global by accident. | robust-predicates |
-| `packages/intent` | Pointer input to candidate moves. Phase 0: point-to-point fold lines, landmark and crease snapping. | kernel |
+| `packages/intent` | Pointer input to candidate moves: Huzita–Justin snapping (axioms 1–5, 7), every move a drag could mean and their Tab order, crease-stroke and push gestures. | kernel |
 | `packages/skin` | Realism: stack heights, soft developable bends, fillets, crease-memory shading, mesh buffers. Pure math, no three.js. | kernel |
 | `packages/render` | three.js / React Three Fiber: paper material, fiber textures, studio, overlays. | kernel, skin, three, R3F, drei |
-| `apps/web` | React shell, kernel worker host, store, fold view, bend lab, timeline, strings. | everything |
-| later: `packages/recognize`, `packages/steps` | Move recognition and build steps (Phase 1). | kernel |
+| `packages/steps` | Build steps from the op log: cleanup, names, captions as data, Yoshizawa–Randlett symbols, hand plans, verified by replay. | kernel |
+| `apps/web` | React shell, kernel worker host, store, fold view, steps player, bend lab, timeline, strings. | everything |
 
 Kernel folders: `geometry/` (vectors, robust predicates, lines, polygons, rigid transforms,
 tolerances), `paper/` (crease pattern, spans, material model), `state/` (folded state, layer order,
-flat view, derivations), `moves/` (fold, burnish, turn over, rotate), `validate/` (invariants),
-`history/` (op log, undo/redo, branches, hashing), `io/` (FOLD).
+flat view, derivations, stack levels, equivalence), `moves/` (half-turn core, fold, reverse fold,
+burnish, turn over, rotate), `validate/` (invariants, full or scoped),
+`history/` (op log, undo/redo, branches, hashing), `io/` (FOLD), `recognize/` (naming moves after the
+fact). Move recognition lives in the kernel because it reads only kernel states.
 
 ## Data model
 
@@ -62,7 +64,7 @@ interface CreasePattern {     // material space, mm
 
 interface FoldedState {
   placements: Map<FaceId, Rigid3>;        // material -> world (3D rotation + translation)
-  layerOrder: Map<"f,g", 1 | -1>;         // overlapping pairs; +1: f above g in world (+Y)
+  layerOrder: Map<PairKey, 1 | -1>;       // overlapping pairs, key min·2²¹+max; +1: min above max (+Y)
   holds: Hold[];
 }
 
@@ -77,11 +79,12 @@ and placements are shared by reference, which keeps undo, branches and per-step 
 which are screen coordinates in the default top view; a material frame with determinant +1 there
 has its front facing up.
 
-**Ops** carry the move, grab and hold grips, before/after state hashes and (Phase 1) a label.
+**Ops** carry the move, the grab and hold grips (face, material point, world point), and before/after
+state hashes. The build steps read grips to place the hands.
 
 ## Key algorithms
 
-### Fold (moves/fold.ts)
+### Fold (moves/fold.ts on moves/foldCore.ts)
 
 Folding the picked-up layers 180° about a line, valley (up and over) or mountain (down and under):
 
@@ -112,6 +115,43 @@ Folding the picked-up layers 180° about a line, valley (up and over) or mountai
 
 The result carries the exact transition: the hinge line, direction, moving faces, every new
 face's start placement and parent. The skin animates exactly that.
+
+### Reverse fold (moves/reverse.ts)
+
+1. **Spine.** The folded creases the line touches or crosses whose faces both move: the tip's spine.
+   They must all meet the line at one point P. A line that crosses no folded edge is `unsupported`.
+2. **Sides.** The stack at the seed is split at the innermost adjacent pair of faces meeting along the
+   spine: T (top side) and B (bottom side). Faces are grouped by flooding without crossing folded
+   creases on the spine line. Each face is placed above, inside or below the flap.
+3. **Half-turn** of the tip about the line (the shared core), with the reverse-fold order rule:
+   same-side moving pairs flip, cross-side pairs keep their order. Inside: T's tip goes under T's
+   flap layers and over B's. Outside: T's tip over the flap, B's under it. Layers above or below
+   the flap stay there. A stationary layer in the gap makes the move `unsupported`.
+4. **Validate** (scoped). Whatever fails is `blocked` with the faces that would pass through a fold.
+   For a given line only one of inside/outside survives: inside needs the line within 90° of the
+   tip's spine, outside past 90°.
+
+The transition adds what the skin needs: the T/B split, the flap's top and bottom faces, and the
+spine (P and the direction away from the tip).
+
+### Recognition (recognize/recognize.ts)
+
+Post-hoc. Same faces, same creases, rigid placements → turn over or rotate. Otherwise diff the crease
+patterns (created, refolded, unfolded, flipped) and look at the degree-4 vertex at P: two new creases
+with the spine's sign make an inside reverse fold, with the opposite sign an outside one. Plain folds
+are valley or mountain by the layer order of mover against stayer. Confidence below 0.5 → "Fold".
+
+### Build steps (packages/steps)
+
+1. **Group** the op log: a fold and the burnishes on its line are one step; fold-then-unfold on one
+   line is a precrease; turn-overs that cancel are dropped.
+2. **Describe** each step from the states before and after it: name (recognizer), caption as data
+   (landmarks placed against the model's outline in the view), symbols (fold lines, arrows, push
+   arrow, turn-over/rotate), hand plan (folding hand pinches the recorded grab, or the nearest
+   corner of the flap; the holding hand is on stationary paper behind the line and outside the
+   flap's landing; a fingernail along the crease).
+3. **Verify:** replay every step's moves from the initial state; `sameFoldedState` with the design or
+   fall back to one step per op.
 
 ### Invariants (validate/invariants.ts), checked after every commit
 
@@ -181,24 +221,30 @@ bias (double-sided paper breaks normal-offset bias).
 `KernelHost` lives in a Web Worker (Comlink) and owns the history. The UI thread only receives
 `Snapshot`s (plain data) and `Transition`s by structured clone, and sends moves.
 
-## Data flow (Phase 0)
+## Data flow (Phase 1)
 
-1. **Pointer down** on the paper (with a 6 px grace margin): intent records the grab point;
-   anywhere else the camera orbits.
-2. **Pointer move:** intent proposes the point-to-point fold line (snapped), the worker validates
-   it (`preview`), and the ghost shows the fold line and where the flap lands, or turns warm and
-   lights the blocking layers.
-3. **Pointer up:** the worker commits; the skin animates the transition (swing over soft, spring
-   back to the rest angle). Double-click or C creases it: the kernel burnishes, the skin sharpens
-   it from the middle outward.
+1. **Pointer down** on the paper (6 px grace margin; a grab on an edge is nudged 0.05 mm inside):
+   intent records the press. Elsewhere the camera orbits. Space + press adds a hold instead.
+2. **The first 8 px decide** (intent/gestures.ts): crease stroke along a folded edge, push across one
+   beside a precrease, else a grab.
+3. **Grab, pointer move:** intent snaps the point-to-point line (axioms 1–5, 7); the worker's
+   `explore` validates every candidate, returns them in Tab order with the selected one's
+   after-state and exact transition (latest request wins). The skin draws that after-state at the
+   angle the pointer asks for; the ghost shows the fold line, the landing and snap rings; the chip
+   names the move. If nothing is valid the paper resists and the blockers glow.
+4. **Pointer up:** the worker commits the shown candidate with the grab and holds; the skin lands it
+   from the angle on screen and springs back to the kernel's rest angle. A crease stroke burnishes
+   only where the finger passed.
+5. **Steps:** the worker builds and verifies the steps from the op log and sends plain snapshots
+   per step; the player animates them.
 
 ## Risks and how I'll handle them
 
 | Risk | Plan |
 | --- | --- |
-| **Validation cost.** Full validation is O(F²) pairs + O(F³) triples; ≈21 ms at 64 fully stacked faces. The brief wants < 30 ms candidates at 500 faces. | Incremental validation: only pairs/triples involving changed faces, on a BVH/grid of face boxes; full validation on commit in dev and in tests. Rust/WASM only if that's not enough. |
+| **Validation cost.** Full validation is O(F²) pairs + O(F³) triples. The brief wants < 30 ms candidates at 500 faces. | Done in Phase 1: scoped validation of pairs/triples touching changed faces (numbers in PHASE-1.md). Next: a grid of face boxes for the overlap pairs; Rust/WASM only if that's not enough. |
 | **Skin frame cost** (≈19 ms per moving frame at 64 faces). | Rebuild only moving faces per frame, cache static geometry, move the bend map into a vertex shader (uniforms: line, θ, ρ). |
-| **Reverse folds** need a 1-DOF degree-4 motion and bounded elastic bending for multi-layer flaps. | Phase 1: closed-form degree-4 kinematics (Huffman; Tachi) checked against a numeric loop-closure solve; sweep the transition with adaptive sampling. |
+| **Reverse folds** need a 1-DOF degree-4 motion and bounded elastic bending for multi-layer flaps. | Phase 1 ships exact flat results with an approximate motion (ADR-033). Phase 2: closed-form degree-4 kinematics (Huffman; Tachi) with bending, checked against a numeric loop-closure solve. |
 | **3D (non-flat) states** for hinges and shaping. | Placements are already 3D; validation adds a sampled swept-volume test on BVHs (three-mesh-bvh) for non-flat moves. |
 | **Woven layer orders** have no global height per face. | Per-region heights from the overlap arrangement (Phase 2). |
 | **Creep and thickness accommodation** in static states. | Phase 2 skin solver; the arc model is already developable. |

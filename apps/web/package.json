@@ -15,6 +15,7 @@
     "@paperfold/kernel": "workspace:*",
     "@paperfold/render": "workspace:*",
     "@paperfold/skin": "workspace:*",
+    "@paperfold/steps": "workspace:*",
     "@react-three/drei": "10.7.9",
     "@react-three/fiber": "9.8.2",
     "comlink": "4.4.2",

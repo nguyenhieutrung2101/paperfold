@@ -1,7 +1,9 @@
-import type { Line2, Snapshot, Transition, Vec2 } from '@paperfold/kernel';
-import type { PaperMode } from '@paperfold/skin';
+import type { CandidateKind } from '@paperfold/intent';
+import type { Line2, ReasonCode, Snapshot, Transition, Vec2 } from '@paperfold/kernel';
+import type { MotionTransition, PaperMode } from '@paperfold/skin';
+import type { HandSide } from '@paperfold/steps';
 import { create } from 'zustand';
-import type { View } from './kernel/api.ts';
+import type { CandidateStatus, DragPreview, StepsView, View } from './kernel/api.ts';
 import { PRESETS, type PresetId } from './presets.ts';
 
 export type Theme = 'light' | 'dark';
@@ -10,11 +12,13 @@ export type Theme = 'light' | 'dark';
 export interface ActiveFold {
   readonly key: number;
   readonly before: Snapshot;
-  readonly transition: Extract<Transition, { kind: 'fold' }>;
+  readonly transition: MotionTransition;
   /** performance.now() when the fold landed (animation start). */
   readonly startedAt: number;
   /** performance.now() when creasing started, if it has. */
   readonly creasedAt: number | null;
+  /** The angle it was already at when committed from a live drag (radians). */
+  readonly fromTheta?: number;
 }
 
 /** A whole-model move animating in (turn over, rotate). */
@@ -32,6 +36,36 @@ export interface Ghost {
   readonly allLayers: boolean;
 }
 
+/** The live drag: what the paper is doing under the pointer right now. */
+export interface DragView {
+  /** The candidate being shown (the last valid one while resisting). */
+  readonly preview: DragPreview['preview'];
+  /** Where the fold should be (radians); the paper eases toward it. */
+  readonly theta: number;
+  /** The selected candidate was refused: the paper resists and trembles. */
+  readonly resisting: boolean;
+  readonly candidates: readonly CandidateStatus[];
+  readonly selected: number;
+  readonly line: Line2 | null;
+  readonly marks: readonly Vec2[];
+  readonly pointer: { readonly x: number; readonly y: number };
+}
+
+/** A crease stroke in progress: sharpness along a fold line. */
+export interface CreaseOverlay {
+  readonly line: Line2;
+  readonly lo: number;
+  readonly hi: number;
+  readonly value: number;
+}
+
+export interface KeyboardFold {
+  readonly stage: 'from' | 'to';
+  readonly from: Vec2 | null;
+  readonly current: Vec2;
+  readonly text: string;
+}
+
 export interface PointerHint {
   readonly text: string;
   readonly x: number;
@@ -40,7 +74,7 @@ export interface PointerHint {
 }
 
 export interface Paperstate {
-  readonly mode: 'fold' | 'lab';
+  readonly mode: 'fold' | 'lab' | 'steps';
   readonly theme: Theme;
   readonly paperMode: PaperMode;
   readonly autoCrease: boolean;
@@ -58,6 +92,15 @@ export interface Paperstate {
   readonly hint: PointerHint | null;
   readonly firstRun: number;
   readonly busy: boolean;
+  readonly drag: DragView | null;
+  readonly holds: readonly Vec2[];
+  readonly creaseOverlay: CreaseOverlay | null;
+  readonly keyboard: KeyboardFold | null;
+  readonly lastRefusal: { readonly reason: ReasonCode; readonly at: number } | null;
+  /** The alternative the user picked last time (it leads when valid). */
+  readonly preferred: CandidateKind | null;
+  readonly handedness: HandSide;
+  readonly stepsView: StepsView | null;
 }
 
 export interface PaperActions {
@@ -102,6 +145,14 @@ export const useStore = create<Paperstate & PaperActions>((set) => ({
   hint: null,
   firstRun: firstRunIndex(),
   busy: false,
+  drag: null,
+  holds: [],
+  creaseOverlay: null,
+  keyboard: null,
+  lastRefusal: null,
+  preferred: null,
+  handedness: 'right',
+  stepsView: null,
   set: (partial) => set(partial),
   showHint: (text, x, y) => set({ hint: { text, x, y, at: performance.now() } }),
 }));

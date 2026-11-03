@@ -5,7 +5,8 @@ import {
   type Snapshot,
   type Span,
 } from '@paperfold/kernel';
-import type { FoldMotion, FoldTransition, PaperMode } from '@paperfold/skin';
+import { type FoldMotion, type MotionTransition, type PaperMode, reverseOpening } from '@paperfold/skin';
+import type { CreaseOverlay } from '../store.ts';
 import type { ActiveFold } from '../store.ts';
 
 export const TIMING = {
@@ -38,7 +39,7 @@ export interface CreaseProfile {
   readonly fullySharp: boolean;
 }
 
-export function creaseProfile(snap: Snapshot, tr: FoldTransition): CreaseProfile {
+export function creaseProfile(snap: Snapshot, tr: MotionTransition): CreaseProfile {
   const segments: Segment[] = [];
   let restDeg = 0;
   let fullySharp = true;
@@ -66,7 +67,8 @@ export function creaseProfile(snap: Snapshot, tr: FoldTransition): CreaseProfile
     uMin = Math.min(uMin, s.ua, s.ub);
     uMax = Math.max(uMax, s.ua, s.ub);
   }
-  const at = (u: number) => {
+  if (segments.length === 0) return { at: () => 1, uMin: 0, uMax: 0, restDeg: 180, fullySharp: true };
+  const raw = (u: number) => {
     let best = 0;
     for (const s of segments) {
       const lo = Math.min(s.ua, s.ub);
@@ -75,6 +77,34 @@ export function creaseProfile(snap: Snapshot, tr: FoldTransition): CreaseProfile
       best = Math.max(best, sampleSpans(s.spans, (u - s.ua) / (s.ub - s.ua)));
     }
     return best;
+  };
+  // Paper is stiff: sharpness changes along a fold over a few millimetres, not in a step.
+  // Pre-sample on a 0.5 mm grid and smooth with a ±5 mm triangle.
+  const step = 0.5;
+  const from = Math.min(uMin, uMax) - 6;
+  const n = Math.max(2, Math.ceil((Math.max(uMin, uMax) + 6 - from) / step));
+  const grid = new Float64Array(n + 1);
+  for (let i = 0; i <= n; i++) grid[i] = raw(from + i * step);
+  const radius = Math.round(5 / step);
+  const smoothGrid = new Float64Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    let sum = 0;
+    let w = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const j = i + k;
+      if (j < 0 || j > n) continue;
+      const wk = radius + 1 - Math.abs(k);
+      sum += grid[j]! * wk;
+      w += wk;
+    }
+    smoothGrid[i] = Math.max(grid[i]! * 0.6, sum / w);
+  }
+  const at = (u: number) => {
+    const f = (u - from) / step;
+    if (f <= 0 || f >= n) return grid[Math.max(0, Math.min(n, Math.round(f)))]!;
+    const i = Math.floor(f);
+    const t = f - i;
+    return smoothGrid[i]! * (1 - t) + smoothGrid[i + 1]! * t;
   };
   if (segments.length === 0) return { at: () => 1, uMin: 0, uMax: 0, restDeg: 180, fullySharp: true };
   return { at, uMin, uMax, restDeg: restDeg || 180, fullySharp };
@@ -91,20 +121,52 @@ export interface MotionFrame {
  * spring back toward the kernel's rest angle, and when creased, sharpen from the middle
  * outward the way a fingernail runs along a fold.
  */
-export function foldPose(active: ActiveFold, snap: Snapshot, now: number, mode: PaperMode): MotionFrame {
+/** A crease stroke on this fold's line adds sharpness where the finger has passed. */
+function withOverlay(base: (u: number) => number, tr: MotionTransition, overlay: CreaseOverlay | null): (u: number) => number {
+  if (!overlay) return base;
+  const l = tr.line;
+  const o = overlay.line;
+  if (Math.abs(l.d[0] * o.d[1] - l.d[1] * o.d[0]) > 1e-3) return base;
+  if (Math.abs((o.p[0] - l.p[0]) * l.d[1] - (o.p[1] - l.p[1]) * l.d[0]) > 0.05) return base;
+  // Overlay coordinates are along its own line; map to this line's u.
+  const shift = (o.p[0] - l.p[0]) * l.d[0] + (o.p[1] - l.p[1]) * l.d[1];
+  const sign = o.d[0] * l.d[0] + o.d[1] * l.d[1] > 0 ? 1 : -1;
+  const a = shift + sign * overlay.lo;
+  const b = shift + sign * overlay.hi;
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+  return (u) => Math.max(base(u), u >= lo - 2 && u <= hi + 2 ? overlay.value : 0);
+}
+
+export function foldPose(
+  active: ActiveFold,
+  snap: Snapshot,
+  now: number,
+  mode: PaperMode,
+  overlay: CreaseOverlay | null = null,
+): MotionFrame {
   const reduce = reducedMotion();
   const k = reduce ? 0.35 : 1;
-  const profile = creaseProfile(snap, active.transition);
+  const raw = creaseProfile(snap, active.transition);
+  const profile = { ...raw, at: withOverlay(raw.at, active.transition, overlay) };
   const t = now - active.startedAt;
   const ideal = mode === 'ideal';
-  const restTheta = ideal ? Math.PI : (profile.restDeg * Math.PI) / 180;
+  // A reverse fold's tip is held inside (or around) the flap: it doesn't spring back.
+  const reverse = active.transition.kind === 'reverse';
+  const restTheta = ideal || reverse ? Math.PI : (profile.restDeg * Math.PI) / 180;
 
   let theta: number;
   let animating = true;
-  if (t < TIMING.fold * k) {
-    theta = Math.PI * easeInOut(clamp01(t / (TIMING.fold * k)));
-  } else if (t < (TIMING.fold + TIMING.settle) * k) {
-    const s = easeOut(clamp01((t - TIMING.fold * k) / (TIMING.settle * k)));
+  let opening = 0;
+  // From a live drag the paper is already most of the way over: land from there.
+  const from = clamp01((active.fromTheta ?? 0) / Math.PI) * Math.PI;
+  const foldMs = TIMING.fold * k * Math.max(0.25, (Math.PI - from) / Math.PI);
+  if (t < foldMs) {
+    const e = from > 0 ? easeOut(clamp01(t / foldMs)) : easeInOut(clamp01(t / foldMs));
+    theta = from + (Math.PI - from) * e;
+    if (reverse) opening = reverseOpening(theta / Math.PI);
+  } else if (t < foldMs + TIMING.settle * k) {
+    const s = easeOut(clamp01((t - foldMs) / (TIMING.settle * k)));
     theta = Math.PI + (restTheta - Math.PI) * s;
   } else {
     theta = restTheta;
@@ -127,10 +189,12 @@ export function foldPose(active: ActiveFold, snap: Snapshot, now: number, mode: 
     if (!animating && profile.fullySharp) return { motion: null, animating: false };
   } else if (ideal && !animating) {
     return { motion: null, animating: false };
+  } else if (overlay) {
+    animating = true;
   }
 
   return {
-    motion: { before: active.before, transition: active.transition, theta, sharpnessAt },
+    motion: { before: active.before, transition: active.transition, theta, sharpnessAt, opening },
     animating,
   };
 }

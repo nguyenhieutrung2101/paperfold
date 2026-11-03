@@ -3,7 +3,8 @@
 Fold origami in realistic 3D with your own hands, in the browser. Every fold is checked against
 real paper by an exact origami kernel; the paper looks and moves like paper.
 
-**Status: Phase 0 (plan and spikes).** See [docs/PHASE-0.md](docs/PHASE-0.md) for what works.
+**Status: Phase 1 (an MVP that feels right).** See [docs/PHASE-1.md](docs/PHASE-1.md) for what works,
+what's approximated and what's next.
 
 ```sh
 pnpm install
@@ -13,21 +14,26 @@ pnpm typecheck
 pnpm e2e        # Playwright smoke tests
 ```
 
-Drag a corner to where it should land. Shift takes every layer. Double-click (or C) creases the
-fold. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes. Drag the table to orbit. The
-**Bend lab** tab is the paper-realism playground: bend a stack, then run the pointer along the fold
-to crease just that part.
+Drag a corner to where it should land; the paper bends under the pointer and a chip names the move.
+Tab tries another way (top layer, every layer, inside or outside reverse fold), Shift takes every
+layer, Ctrl/Cmd folds freehand. Run a finger along a fold to crease it (double-click or C creases the
+whole fold). Hold Space and press to pin the paper. Push a folded edge in beside a precrease for an
+inside reverse fold. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes, K folds with the
+keyboard. Drag the table to orbit. **Steps** plays your design back as build steps with hands,
+symbols and captions. The **Bend lab** is the paper-realism playground.
 
 ## Layout
 
 ```
 packages/kernel   headless origami kernel: geometry, crease pattern, folded state, layer order,
                   moves, validation, history, FOLD I/O (pure TS, deterministic)
-packages/intent   pointer input to candidate moves (point-to-point folds, snapping)
+packages/intent   pointer input to candidate moves (Huzita–Justin snapping, Tab alternatives,
+                  crease strokes, push gestures)
 packages/skin     soft, thick, two-sided paper geometry from the kernel's state (pure math)
-packages/render   three.js / React Three Fiber: paper material, studio, overlays
-apps/web          the app: worker host, store, fold view, bend lab, UI, strings.en.ts
-docs/             PLAN, ARCHITECTURE, DECISIONS (ADRs), PHASE-0 notes
+packages/render   three.js / React Three Fiber: paper material, studio, overlays, hands
+packages/steps    build steps from the op log: names, captions as data, symbols, hands, replay check
+apps/web          the app: worker host, store, fold view, steps player, bend lab, UI, strings.en.ts
+docs/             PLAN, ARCHITECTURE, DECISIONS (ADRs), PHASE-0 and PHASE-1 notes
 ```
 
 ## Docs
@@ -35,7 +41,8 @@ docs/             PLAN, ARCHITECTURE, DECISIONS (ADRs), PHASE-0 notes
 - [Plan](docs/PLAN.md): one page, phases, decisions, where the brief pulls against itself
 - [Architecture](docs/ARCHITECTURE.md): modules, data model, algorithms, risks
 - [Decisions](docs/DECISIONS.md): short ADRs
-- [Phase 0 notes](docs/PHASE-0.md): what works, what doesn't, measurements, what's next
+- [Phase 1 notes](docs/PHASE-1.md): the gate, what works, what doesn't, measurements, what's next
+- [Phase 0 notes](docs/PHASE-0.md)
 
 ## References
 

@@ -5,6 +5,7 @@
  */
 export { PaperMesh, type PaperMeshProps } from './PaperMesh.tsx';
 export { Studio, type StudioProps } from './Studio.tsx';
-export { FoldLine, GhostOutline, SnapRing } from './Overlays.tsx';
+export { FoldArrow, FoldLine, GhostOutline, PushArrow, SnapRing } from './Overlays.tsx';
+export { Hand, type HandPoseName, type HandProps } from './Hand.tsx';
 export { createPaperMaterial, type PaperLook, type PaperMaterial } from './paperMaterial.ts';
 export { createCuttingMatTexture, createFiberAlbedo, createFiberNormalMap } from './textures.ts';

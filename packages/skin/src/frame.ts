@@ -1,5 +1,6 @@
 import {
   add3,
+  apply,
   applyMaterial,
   applyPlaneIso,
   clipHalfPlane,
@@ -15,6 +16,7 @@ import {
   planeDirToWorld,
   planeIsoOf,
   type Rigid3,
+  rotationAbout,
   scale3,
   type Snapshot,
   type SnapshotCrease,
@@ -56,15 +58,23 @@ export function skinParamsFor(paper: Paper, mode: PaperMode): SkinParams {
 }
 
 export type FoldTransition = Extract<Transition, { kind: 'fold' }>;
+export type ReverseTransition = Extract<Transition, { kind: 'reverse' }>;
+/** Transitions the skin can animate as a fold in motion. */
+export type MotionTransition = FoldTransition | ReverseTransition;
 
 /** A fold in motion: the kernel's validated transition at angle theta. */
 export interface FoldMotion {
   readonly before: Snapshot;
-  readonly transition: FoldTransition;
+  readonly transition: MotionTransition;
   /** Radians, 0 (start) .. π (flat on the other side). */
   readonly theta: number;
   /** Crease sharpness 0..1 at coordinate u along transition.line. */
   readonly sharpnessAt: (u: number) => number;
+  /**
+   * Reverse folds: how far the flap's top side is open (radians). Defaults to the opening for
+   * a swing at this theta; pass 0 once the fold has landed.
+   */
+  readonly opening?: number;
 }
 
 export interface SkinFrame {
@@ -169,6 +179,48 @@ function bendMapper(
   };
 }
 
+/**
+ * A stationary face swung about a hinge on the table (the flap opening to let a reverse
+ * fold's tip in). The face's own side of the hinge goes up.
+ */
+function liftMapper(base: FaceMapper, material: readonly Vec2[], hinge: Line2, angle: number): FaceMapper {
+  if (angle === 0) return base;
+  const c = centroidOf(material.map((p) => base.pos(p)));
+  const axisDir = planeDirToWorld(hinge.d);
+  const axisPoint: Vec3 = [hinge.p[0], c[1], -hinge.p[1]];
+  const v = sub3(c, axisPoint);
+  const up = cross3(axisDir, v)[1];
+  const rot = rotationAbout(axisPoint, axisDir, up >= 0 ? angle : -angle);
+  const rotOnly: Rigid3 = { r: rot.r, t: [0, 0, 0] };
+  return {
+    moving: true,
+    pos: (p) => apply(rot, base.pos(p)),
+    normal: (p) => apply(rotOnly, base.normal(p)),
+  };
+}
+
+function centroidOf(pts: readonly Vec3[]): Vec3 {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (const p of pts) {
+    x += p[0];
+    y += p[1];
+    z += p[2];
+  }
+  return [x / pts.length, y / pts.length, z / pts.length];
+}
+
+/**
+ * How far the flap's top side opens during an inside reverse fold (radians), at fold
+ * progress k (0..1). APPROXIMATION: real paper opens a little and flexes the tip through;
+ * a rigid tip needs the flap fully open (degree-4 kinematics), so we open it wide enough to
+ * read clearly, then close it over the tip.
+ */
+export function reverseOpening(k: number): number {
+  return ((95 * Math.PI) / 180) * Math.sin(Math.PI * Math.min(1, Math.max(0, k)));
+}
+
 const normalize3 = (v: Vec3): Vec3 => {
   const l = len3(v) || 1;
   return [v[0] / l, v[1] / l, v[2] / l];
@@ -201,21 +253,31 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion) {
     const tr = motion.transition;
     const k = Math.min(1, Math.max(0, motion.theta / Math.PI));
     const moving = new Set(tr.moving);
-    rhoAt = (u) => params.softRadiusMm * (1 - Math.min(1, Math.max(0, motion.sharpnessAt(u))));
+    // APPROXIMATION: a reverse fold turns on a sharp hinge. Its tip ends up inside or around
+    // other layers, and a soft loop (which lands 2·rho proud of the stack) would poke through
+    // the flap that closes over it. Real paper squashes that loop between the layers; Phase 2
+    // per-region heights can draw the bulge instead.
+    const sharpHinge = tr.kind === 'reverse';
+    rhoAt = sharpHinge ? () => 0 : (u) => params.softRadiusMm * (1 - Math.min(1, Math.max(0, motion.sharpnessAt(u))));
     // The sharpest section pins the flap.
     let rhoPin = Infinity;
     for (let i = 0; i <= 256; i++) rhoPin = Math.min(rhoPin, rhoAt(-snap.sizeMm * 2 + (snap.sizeMm * 4 * i) / 256));
     const blend = Math.max(12, 4 * params.softRadiusMm);
+    // Reverse folds: outside sends the bottom side's tip under; inside opens the flap's top
+    // side about the spine while the tip swings into the gap.
+    const under = new Set(tr.kind === 'reverse' && tr.reverse === 'outside' ? tr.bottom : []);
+    const lifted = new Set(tr.kind === 'reverse' && tr.reverse === 'inside' ? tr.flapTop : []);
+    const opening = tr.kind === 'reverse' ? (motion.opening ?? reverseOpening(k)) : 0;
     for (const f of snap.faces) {
       const parent = tr.parentOf.get(f.id) ?? f.id;
       const h1 = after.get(f.id)!;
       const h0 = before.get(parent) ?? h1;
       const start = tr.startPlacements.get(f.id) ?? f.placement;
       if (moving.has(f.id)) {
-        mappers.set(
-          f.id,
-          bendMapper(start, tr.line, { h0, h1, sigma: tr.direction }, motion.theta, rhoAt, rhoPin, blend),
-        );
+        const sigma: 1 | -1 = tr.kind === 'fold' ? tr.direction : under.has(f.id) ? -1 : 1;
+        mappers.set(f.id, bendMapper(start, tr.line, { h0, h1, sigma }, motion.theta, rhoAt, rhoPin, blend));
+      } else if (lifted.has(f.id) && tr.kind === 'reverse') {
+        mappers.set(f.id, liftMapper(staticMapper(start, h0 + (h1 - h0) * k), f.material, tr.spine, opening));
       } else {
         mappers.set(f.id, staticMapper(start, h0 + (h1 - h0) * k));
       }

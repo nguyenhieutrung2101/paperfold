@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { exportFold, goTo, newSheet, openFold, performMove, redo, undo, creaseActive } from './actions.ts';
+import { creaseActive, exportFold, goTo, newSheet, openFold, openSteps, performMove, redo, undo } from './actions.ts';
 import { FoldView } from './fold/FoldView.tsx';
+import type { Thumb } from './kernel/api.ts';
+import { StepsPlayer } from './steps/StepsPlayer.tsx';
 import { LabView } from './lab/LabView.tsx';
 import { PRESET_ORDER, PRESETS, type PresetId } from './presets.ts';
-import { strings } from './strings.en.ts';
+import { candidateName, moveNames, strings } from './strings.en.ts';
 import { saveTheme, useStore } from './store.ts';
 
 function hasWebGL2(): boolean {
@@ -37,6 +39,9 @@ function TopBar() {
         <span className="segmented" role="tablist">
           <button role="tab" aria-selected={mode === 'fold'} className={mode === 'fold' ? 'on' : ''} onClick={() => set({ mode: 'fold' })}>
             {strings.fold}
+          </button>
+          <button role="tab" aria-selected={mode === 'steps'} className={mode === 'steps' ? 'on' : ''} onClick={() => void openSteps()}>
+            {strings.stepsButton}
           </button>
           <button role="tab" aria-selected={mode === 'lab'} className={mode === 'lab' ? 'on' : ''} onClick={() => set({ mode: 'lab', ghost: null })}>
             {strings.lab}
@@ -128,6 +133,17 @@ function SidePanel() {
         </span>
       </label>
       <label className="field">
+        <span>{strings.handedness}</span>
+        <span className="segmented">
+          <button className={s.handedness === 'right' ? 'on' : ''} onClick={() => s.set({ handedness: 'right' })}>
+            {strings.rightHand}
+          </button>
+          <button className={s.handedness === 'left' ? 'on' : ''} onClick={() => s.set({ handedness: 'left' })}>
+            {strings.leftHand}
+          </button>
+        </span>
+      </label>
+      <label className="field">
         <span>{strings.theme}</span>
         <span className="segmented">
           <button className={s.theme === 'light' ? 'on' : ''} onClick={() => saveTheme('light')}>
@@ -140,6 +156,30 @@ function SidePanel() {
       </label>
       <p className="muted keys">{strings.keys}</p>
     </aside>
+  );
+}
+
+/** A small top view of a step: faces bottom to top in the paper's colors. */
+function ThumbSvg({ thumb }: { readonly thumb: Thumb }) {
+  const front = useStore((s) => s.frontColor);
+  const back = useStore((s) => s.backColor);
+  return (
+    <svg className="thumb" viewBox="0 0 1 1" aria-hidden="true">
+      {thumb.polys.map((poly, i) => {
+        const pts: string[] = [];
+        for (let k = 0; k + 1 < poly.length; k += 2) pts.push(`${poly[k]!.toFixed(3)},${poly[k + 1]!.toFixed(3)}`);
+        return (
+          <polygon
+            key={i}
+            points={pts.join(' ')}
+            fill={thumb.frontUp[i] ? front : back}
+            stroke="rgba(0,0,0,0.35)"
+            strokeWidth={0.012}
+            strokeLinejoin="round"
+          />
+        );
+      })}
+    </svg>
   );
 }
 
@@ -158,10 +198,12 @@ function Timeline() {
             <button
               className={`step ${t.current ? 'current' : ''}`}
               onClick={() => void goTo(t.id)}
-              title={i === 0 ? strings.start : `${i}. ${strings.moveLabel[t.label] ?? t.label}`}
+              title={i === 0 ? strings.start : `${i}. ${t.label === 'start' ? strings.start : moveNames[t.label]}`}
               aria-current={t.current ? 'step' : undefined}
+              aria-label={i === 0 ? strings.start : `${i}. ${t.label === 'start' ? strings.start : moveNames[t.label]}`}
             >
-              {i === 0 ? '□' : i}
+              <ThumbSvg thumb={t.thumb} />
+              <span className="step-n">{i === 0 ? '' : i}</span>
             </button>
           </li>
         ))}
@@ -185,16 +227,37 @@ function Hints() {
     const t = window.setTimeout(() => tick((n) => n + 1), 2300);
     return () => window.clearTimeout(t);
   }, [hint]);
+  const drag = useStore((s) => s.drag);
+  const keyboard = useStore((s) => s.keyboard);
   const showPointer = hint && performance.now() - hint.at < 2200;
   const steps = (view?.timeline.length ?? 1) - 1;
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   let intro: string | null = null;
   if (mode === 'fold' && firstRun === 0 && steps === 0) intro = strings.firstRun[0]!;
   else if (mode === 'fold' && firstRun === 1 && active && active.creasedAt === null) intro = strings.firstRun[1]!;
+  else if (mode === 'fold' && firstRun === 2 && !drag) intro = coarse ? strings.firstRunTouchHold : strings.firstRun[2]!;
+  // The chip names the move when it isn't a plain fold of the top layer.
+  const cand = drag?.candidates[drag.selected];
+  const chip =
+    drag && cand && !drag.resisting && (cand.kind !== 'fold-top' || drag.candidates.length > 1)
+      ? { text: candidateName(cand.kind, cand.layers), more: drag.candidates.length > 1 }
+      : null;
   return (
     <>
-      {intro && (
+      {intro && !keyboard && (
         <div className="intro" role="status">
           {intro}
+        </div>
+      )}
+      {keyboard && (
+        <div className="intro" role="status" aria-live="polite">
+          {keyboard.text}
+        </div>
+      )}
+      {chip && drag && (
+        <div className="chip" style={{ left: drag.pointer.x + 16, top: drag.pointer.y - 36 }}>
+          {chip.text}
+          {chip.more && <kbd>{strings.tabForMore}</kbd>}
         </div>
       )}
       {showPointer && (
@@ -258,7 +321,7 @@ export function App() {
   }
   return (
     <div className="app">
-      <div className="stage">{mode === 'fold' ? <FoldView /> : <LabView />}</div>
+      <div className="stage">{mode === 'fold' ? <FoldView /> : mode === 'lab' ? <LabView /> : <StepsPlayer />}</div>
       <TopBar />
       {mode === 'fold' && <SidePanel />}
       {mode === 'fold' && <Timeline />}

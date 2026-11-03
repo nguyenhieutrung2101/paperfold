@@ -1,7 +1,7 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import { FoldLine, GhostOutline, SnapRing, Studio } from '@paperfold/render';
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { MOUSE, NeutralToneMapping, TOUCH } from 'three';
 import { useStore } from '../store.ts';
 
@@ -9,23 +9,72 @@ import { useStore } from '../store.ts';
 const SHADOWS = new URLSearchParams(location.search).get('shadows') !== '0';
 import { FoldInput } from './FoldInput.tsx';
 import { PaperModel } from './PaperModel.tsx';
-import { clipLineToBox, footprint } from './plane.ts';
+import { clipLineToBox, facePolygons, footprint } from './plane.ts';
 
+/** What the drag will do, drawn on the paper: the fold line, where the flap lands, snaps. */
 function Ghost({ heightRef }: { readonly heightRef: React.RefObject<number> }) {
-  const ghost = useStore((s) => s.ghost);
+  const drag = useStore((s) => s.drag);
   const view = useStore((s) => s.view);
   const dark = useStore((s) => s.theme === 'dark');
-  if (!ghost || !view) return null;
-  const seg = clipLineToBox(ghost.line, footprint(view.snapshot), 12);
-  const color = ghost.ok ? (dark ? '#8fc3ff' : '#1f5fae') : '#e0652f';
+  const landing = useMemo(() => {
+    const pv = drag?.preview;
+    if (!pv) return [];
+    const moving = new Set(pv.transition.moving);
+    return facePolygons(pv.after)
+      .filter((f) => moving.has(f.id))
+      .map((f) => f.poly);
+  }, [drag?.preview]);
+  if (!drag || !view || !drag.line) return null;
+  const seg = clipLineToBox(drag.line, footprint(view.snapshot), 12);
+  const color = drag.resisting ? '#e0652f' : dark ? '#8fc3ff' : '#1f5fae';
+  const kind = drag.candidates[drag.selected]?.kind;
+  const mountain = kind === 'inside-reverse' || drag.preview?.transition.kind === 'fold' && drag.preview.transition.direction === -1;
   const y = (heightRef.current ?? 0) + 0.6;
   return (
     <>
-      {seg && <FoldLine a={seg[0]} b={seg[1]} height={y} kind="valley" color={color} />}
-      {ghost.ok && <GhostOutline polygons={ghost.landing} height={y + 0.2} color={color} opacity={0.6} />}
-      {ghost.snaps.map((p, i) => (
+      {seg && <FoldLine a={seg[0]} b={seg[1]} height={y} kind={mountain ? 'mountain' : 'valley'} color={color} />}
+      {!drag.resisting && <GhostOutline polygons={landing} height={y + 0.2} color={color} opacity={0.45} />}
+      {drag.marks.map((p, i) => (
         <SnapRing key={i} at={p} height={y} radius={2.2} color={color} />
       ))}
+    </>
+  );
+}
+
+/** Fingertips holding the paper down: a soft shadow where each one presses. */
+function Holds({ heightRef }: { readonly heightRef: React.RefObject<number> }) {
+  const holds = useStore((s) => s.holds);
+  const y = (heightRef.current ?? 0) + 0.25;
+  return (
+    <>
+      {holds.map((p, i) => (
+        <group key={i} position={[p[0], y, -p[1]]} rotation-x={-Math.PI / 2}>
+          <mesh>
+            <circleGeometry args={[5.5, 32]} />
+            <meshBasicMaterial color="#000000" transparent opacity={0.22} depthWrite={false} />
+          </mesh>
+          <mesh position={[0, 0, 0.05]}>
+            <ringGeometry args={[5.5, 6.3, 40]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.55} depthWrite={false} />
+          </mesh>
+        </group>
+      ))}
+    </>
+  );
+}
+
+/** Keyboard folding: rings on the picked landmark and the one in focus. */
+function KeyboardMarks({ heightRef }: { readonly heightRef: React.RefObject<number> }) {
+  const kb = useStore((s) => s.keyboard);
+  const dark = useStore((s) => s.theme === 'dark');
+  if (!kb) return null;
+  const y = (heightRef.current ?? 0) + 0.6;
+  const color = dark ? '#8fc3ff' : '#1f5fae';
+  return (
+    <>
+      {kb.from && <SnapRing at={kb.from} height={y} radius={3.2} color={color} />}
+      <SnapRing at={kb.current} height={y} radius={4.5} color={color} />
+      {kb.from && <FoldLine a={kb.from} b={kb.current} height={y} kind="valley" color={color} />}
     </>
   );
 }
@@ -48,6 +97,8 @@ export function FoldView() {
       <Studio dark={dark} shadows={SHADOWS} />
       <PaperModel onTopHeight={onTopHeight} />
       <Ghost heightRef={topHeight} />
+      <Holds heightRef={topHeight} />
+      <KeyboardMarks heightRef={topHeight} />
       <FoldInput topHeight={topHeight} />
       <OrbitControls
         makeDefault

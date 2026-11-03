@@ -82,9 +82,13 @@ export function clipLineToBox(l: Line2, box: Footprint, pad: number): [Vec2, Vec
  */
 export function grabPoint(snap: Snapshot, p: Vec2, margin: number): Vec2 | null {
   const polys = facePolygons(snap);
-  if (polys.some((f) => containsStrictly(f.poly, p, tol))) return p;
+  // Strictly inside by more than the kernel's length tolerance (1e-6 of the sheet), or the
+  // kernel reads it as on the edge: anything closer than INSET gets nudged in like a near miss.
+  const INSET = 0.05;
+  const inside = polys.some((f) => containsStrictly(f.poly, p, tol));
+  if (inside && polys.every((f) => !containsStrictly(f.poly, p, tol) || edgeDistance(f.poly, p) > INSET)) return p;
   let best: Vec2 | null = null;
-  let bestD = margin;
+  let bestD = inside ? INSET : margin;
   for (const { poly } of polys) {
     const c = poly.reduce((acc, q) => [acc[0] + q[0] / poly.length, acc[1] + q[1] / poly.length] as Vec2, [0, 0] as Vec2);
     for (let i = 0; i < poly.length; i++) {
@@ -101,9 +105,23 @@ export function grabPoint(snap: Snapshot, p: Vec2, margin: number): Vec2 | null 
         const cx = c[0] - q[0];
         const cy = c[1] - q[1];
         const l = Math.hypot(cx, cy) || 1;
-        best = [q[0] + (cx / l) * 0.05, q[1] + (cy / l) * 0.05];
+        best = [q[0] + (cx / l) * INSET, q[1] + (cy / l) * INSET];
       }
     }
+  }
+  return best;
+}
+
+/** Distance from p to the nearest edge of a polygon. */
+function edgeDistance(poly: readonly Vec2[], p: Vec2): number {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % poly.length]!;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1]));
   }
   return best;
 }

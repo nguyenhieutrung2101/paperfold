@@ -313,9 +313,54 @@ input[type='range'] {
 }
 
 .step {
-  min-width: 32px;
-  padding: 4px 8px;
+  position: relative;
+  min-width: 40px;
+  height: 40px;
+  padding: 2px;
   font-variant-numeric: tabular-nums;
+}
+
+.thumb {
+  width: 34px;
+  height: 34px;
+  display: block;
+}
+
+.step-n {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.step.current .step-n {
+  color: var(--accent-text);
+}
+
+/* The chip by the pointer: what this drag will do. */
+.chip {
+  position: fixed;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: var(--surface-solid);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  padding: 4px 10px;
+  pointer-events: none;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.chip kbd {
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--muted);
 }
 
 .step.current {
@@ -397,5 +442,134 @@ input[type='range'] {
 @media (prefers-reduced-motion: reduce) {
   .pointer-hint {
     animation: none;
+  }
+}
+
+/* Steps */
+.steps-view {
+  position: absolute;
+  inset: 0;
+}
+
+.steps-list {
+  position: absolute;
+  top: 72px;
+  left: 16px;
+  width: 300px;
+  max-height: calc(100% - 200px);
+  overflow: auto;
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 14px 14px;
+}
+
+.steps-list h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0;
+}
+
+.steps-list ol {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.steps-list ol button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  padding: 6px 8px;
+  line-height: 1.35;
+}
+
+.steps-list ol button.current {
+  background: var(--line);
+}
+
+.steps-list .n {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.warn {
+  margin: 6px 0 0;
+  color: var(--warm);
+}
+
+.steps-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 32px));
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.steps-bar .caption {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.steps-bar .caption strong {
+  font-weight: 560;
+}
+
+.steps-bar .controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.steps-bar .controls input[type='range'] {
+  flex: 1;
+  min-width: 80px;
+}
+
+.chip-inline {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+
+.symbol-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
+.toggle.compact {
+  align-items: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .steps-list {
+    top: auto;
+    bottom: 150px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-height: 30%;
+  }
+  .steps-bar .controls {
+    flex-wrap: wrap;
   }
 }

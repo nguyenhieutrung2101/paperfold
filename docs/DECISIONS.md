@@ -135,3 +135,138 @@ It is the playground for the realism work and the reference for Phase 1's live d
 freehand), Shift for all layers, ghost preview validated by the kernel, warm refusal with one hint,
 double-click or C to crease, F / Shift+F to turn over, Q / E to rotate, Cmd/Ctrl+Z to undo. The
 flap doesn't bend under the pointer yet (that's Phase 1's live candidate loop).
+
+---
+
+Phase 1
+
+## ADR-021 · Incremental validation, scoped to what a move changed
+
+**Chose** `checkInvariants(state, { changed })`: after a move, only pairs and triples that touch a
+changed face are checked (connectivity, consistency, layer order, taco–taco, taco–tortilla,
+tortilla–tortilla, transitivity from the smallest changed face, flat vertices). It is sound because the
+previous state was valid and untouched pairs can't have broken. **Full validation** still runs in every
+test, after every move of the gate fixtures, and on every .fold import (files are untrusted; a tampered
+file is refused as `invalid`). Kawasaki's tolerance scales with the vertex's conditioning.
+
+## ADR-022 · Numeric pair keys for layer order
+
+**Chose** `PairKey = min · 2²¹ + max` (a safe integer for up to two million faces) instead of `"f,g"`
+strings: no string building on the hot path, and keys sort numerically. FOLD files store rows
+`[f, g, s]`; the old `"f,g"` form still loads.
+
+## ADR-023 · One half-turn core for plain and reverse folds
+
+**Chose** `moves/foldCore.ts`: `prepareHalfTurn` (orient the line, take the stack at the seed, flood the
+moving set, check joined and held faces) and `applyHalfTurn` (split, turn placements by π about the
+line, apply an order rule per changed pair, derive crease angles, re-derive placements, scoped
+validation). A plain fold and a reverse fold differ only in which faces move and the order rule, so
+every guarantee (slivers refused, fail-closed validation, exact transitions) holds for both.
+
+## ADR-024 · Reverse-fold layer rules
+
+The seed's stack is split at the innermost adjacent pair of faces that meet along the spine (the folded
+edge the line crosses) into a top side T and a bottom side B. Among moving faces, pairs on the same
+side flip, pairs across sides keep their order. Moving against stationary: **inside**, the tip goes
+under T's flap layers and over B's; **outside**, T's tip goes over the flap and B's under it. Whatever
+was above the flap stays above the tip, whatever was below stays below. A stationary layer caught in
+the gap between the two sides makes the move `unsupported`; invariant failures are `blocked`. The line
+must cross the spine at one point P; the tip is the part beyond the line. **Consequence:** for a given
+line exactly one of inside/outside is possible (inside within 90° of the tip's spine, outside past it).
+The kernel refuses the other with the layer that would pass through a fold, and the UI only offers
+what is possible.
+
+## ADR-025 · Recognition is post-hoc and conservative
+
+**Chose** to name a move from the result, not from the gesture: diff the crease patterns (created,
+refolded, unfolded, flipped creases), then read the degree-4 vertex at P. Both new creases with the
+spine's sign → inside reverse, opposite → outside. Valley and mountain come from the layer order of
+mover against stayer; a whole-model rigid motion is a turn-over or rotate. Confidence below 0.5 shows
+plain "Fold". Names come from the kernel state, so a precreased push and a direct swing get the same
+name, and so do steps replayed from a file.
+
+## ADR-026 · Folded-state equivalence
+
+**Chose** `sameFoldedState(a, b)`: faces matched by material centroid (face ids differ between
+histories), then placements and pairwise layer order compared within `tolMm`, optionally up to a rigid
+motion of the whole model. The gate and the steps' replay check both use it.
+
+## ADR-027 · Build steps: captions as data, verified by replay
+
+**Chose** to keep every caption, symbol and hand plan as data (`{ kind: 'fold', from: { v, h, what },
+dir, to }`); only `strings.en.ts` turns them into words. Positions are described against the model's
+outline in the current view (top/middle/bottom, left/center/right; corner, edge or point). Cleanup:
+a fold and its crease are one step, fold-then-unfold is a precrease, cancelling turn-overs are dropped.
+**Verified** by replaying the steps' moves from a fresh sheet and comparing with `sameFoldedState`. If
+that fails, fall back to one step per move and tell the user.
+
+## ADR-028 · Live drag: explore every candidate in the worker, latest wins
+
+**Chose** to send the pointer's snapped line to the worker on every move. The worker builds every
+candidate (top layer, 2–3 layers, all layers, inside and outside reverse), validates each with the
+real kernel, caches the results per line, and returns them in Tab order. The selected candidate's
+after-state and exact transition come back too. The main thread keeps only the latest request.
+The skin draws the after-state at θ = min(acos(x/x₀), π − tilt(speed)). **Rejected** validating only
+the shown candidate: Tab would then stall on a round trip, and the chip couldn't know which
+alternatives exist.
+
+## ADR-029 · Candidate order and Tab
+
+**Chose**: on a closed flap where a reverse fold is valid, a swing of the tip means [inside reverse,
+outside reverse, all layers, top layer, k layers]. Otherwise top layer first, or all layers with Shift.
+Invalid candidates drop out; if none is valid, the first stays so its refusal can be shown and
+explained. The last kind picked leads the next time it is valid.
+
+## ADR-030 · Gestures: the first 8 px decide
+
+**Chose** to read a stroke's first 8 px. Along a folded edge (within 10 px of it) → crease stroke:
+sharpness only where the finger passes. Across a folded edge inward near a precrease → push: an
+inside reverse fold along the precrease. Anything else → grab: point-to-point folding. With Space
+down, a press released before it moves pins the paper and a press that moves folds around the pins
+(a mouse user's left hand holds while the right folds); letting go of Space lifts them. On touch a
+resting finger holds while another folds.
+
+## ADR-031 · Snapping: one test for every rule
+
+**Chose** to generate candidate lines from the Huzita–Justin axioms 1–5 and 7 over landmarks and lines
+near the pointer, plus existing creases and a soft 22.5° angle. Each candidate is accepted only if it
+puts the grabbed point within the snap radius of the pointer. Among those, the simplest rule wins:
+crease, A2, A1, A5, A4, A3, A7, angle. Radius 16 px for a mouse, 26 px for touch. The pointer ray
+meets the **resting** stack's top, never a soft fold's loft: aiming at a corner lands on the corner.
+
+## ADR-032 · Refusals and hints
+
+**Chose** (brief, section 5): the first refusal is silent apart from the paper resisting and the
+blocking layers glowing. A second refusal for the same reason within 30 s adds one short hint by the
+pointer. When another reading of the drag is possible (more layers, a reverse fold) it is offered
+instead of a refusal: the chip says "Fold both layers" rather than refusing `joined`.
+
+## ADR-033 · Reverse-fold motion in the skin (approximation)
+
+**Chose** to animate the kernel's exact half-turn for the tip while the flap's top side swings open
+rigidly about the spine, up to 95° (`reverseOpening(k) = 95°·sin(πk)`), and closes again. For outside
+reverse folds the bottom side's tip swings under. The tip turns on a **sharp hinge**: a soft loop
+would land 2·ρ proud of its layer and poke through the flap closing over it. **Labeled** in code. Real
+paper opens a little and flexes the tip through; Phase 2 adds degree-4 kinematics with bending and
+per-region heights for the bulge.
+
+## ADR-034 · Steps player choreography
+
+**Chose** fixed beats per step (hands in, the move, a pause, the crease, unfold for precreases, hands
+out) over 3.2 s at 1×. Hands are procedural, semi-transparent capsules posed per hand plan (pinch,
+hold, push, nail) whose working fingertip sits exactly on the skin's point for the gripped material.
+A slow frame slows the film rather than skipping beats.
+
+## ADR-035 · Partial-angle hinge moves deferred to Phase 2
+
+**Chose** to keep the kernel flat-only through Phase 1 and spend the time on the gate (reverse folds,
+recognition, steps) and on the feel of the live drag. A committed partial angle needs non-flat
+placements, a swept-volume collision check and a `settle` move. Doing that half-way would weaken the
+kernel's guarantees. During a drag the skin shows any angle; letting go lands flat. **This is the one
+Phase 1 item not delivered.**
+
+## ADR-036 · Development hooks
+
+**Chose** to expose `window.__paperfold` (kernel client, store, `toScreen` and `toPlane`) in development
+builds only (`import.meta.env.DEV`), so Playwright tests aim at real landmarks in millimetres instead of
+hard-coded pixels. Production builds don't include it.

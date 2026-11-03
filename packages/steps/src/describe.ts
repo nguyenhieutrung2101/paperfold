@@ -5,7 +5,14 @@ import type { Direction, Place } from './types.ts';
 export function footprintHull(state: KernelState): Vec2[] {
   const view = flatView(state);
   if (!view) return [];
-  const pts = [...view.vertexWorld.values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  // Snap to a 1e-6 mm grid and drop duplicates first: copies of one corner that differ by
+  // rounding noise would otherwise sort out of line order and knock real corners off the hull.
+  const seen = new Map<string, Vec2>();
+  for (const q of view.vertexWorld.values()) {
+    const r: Vec2 = [Math.round(q[0] * 1e6) / 1e6, Math.round(q[1] * 1e6) / 1e6];
+    seen.set(`${r[0]},${r[1]}`, r);
+  }
+  const pts = [...seen.values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: Vec2, a: Vec2, b: Vec2) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const lower: Vec2[] = [];
   for (const p of pts) {

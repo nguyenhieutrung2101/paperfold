@@ -5,6 +5,7 @@ import { adjacency, edgeKey, getVertex } from '../paper/creasePattern.ts';
 import type { Assignment, Crease, EdgeId, Face, FaceId, Paper, Span, VertexId } from '../paper/types.ts';
 import { type PairKey, pairKey, parsePairKey } from '../state/order.ts';
 import type { KernelState } from '../state/types.ts';
+import { checkInvariants } from '../validate/invariants.ts';
 
 /**
  * FOLD file format (Demaine, Ku, Lang: https://github.com/edemaine/fold), spec 1.2.
@@ -144,7 +145,7 @@ function exactState(state: KernelState): ExactState {
 
 export type ImportResult =
   | { readonly ok: true; readonly state: KernelState }
-  | { readonly ok: false; readonly reason: 'not-fold' | 'unsupported' };
+  | { readonly ok: false; readonly reason: 'not-fold' | 'unsupported' | 'invalid' };
 
 /**
  * Open a .fold file. Phase 0 reads files Paperfold wrote (exact state). Plain FOLD crease
@@ -156,7 +157,16 @@ export function fromFold(input: unknown): ImportResult {
   if (typeof file.file_spec !== 'number' && !('paperfold:state' in file)) return { ok: false, reason: 'not-fold' };
   const exact = file['paperfold:state'];
   if (!exact || exact.version !== 1) return { ok: false, reason: 'unsupported' };
-  return { ok: true, state: fromExact(exact) };
+  // Fail closed: a file is untrusted input. It must parse and pass every invariant, checked
+  // from scratch, before it becomes a state.
+  let state: KernelState;
+  try {
+    state = fromExact(exact);
+  } catch {
+    return { ok: false, reason: 'invalid' };
+  }
+  if (checkInvariants(state).length > 0) return { ok: false, reason: 'invalid' };
+  return { ok: true, state };
 }
 
 function fromExact(x: ExactState): KernelState {

@@ -87,3 +87,79 @@ export function SnapRing({ at, height, radius, color }: RingProps) {
   }
   return <Line points={pts} color={color} lineWidth={2} />;
 }
+
+export interface ArrowProps {
+  readonly from: Vec2;
+  readonly to: Vec2;
+  readonly height: number;
+  readonly color: string;
+  /** valley: filled head; mountain: open head; both: heads at both ends (fold and unfold). */
+  readonly kind: 'valley' | 'mountain' | 'both';
+  /** 0..1: how much of the arrow to draw (it grows along its path). */
+  readonly progress?: number;
+}
+
+/**
+ * Yoshizawa–Randlett fold arrow: an arc over the paper from where the paper is to where it
+ * goes. Valley arrows have a filled head, mountain arrows a hollow one.
+ */
+export function FoldArrow({ from, to, height, color, kind, progress = 1 }: ArrowProps) {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-3) return null;
+  const lift = Math.min(40, len * 0.3);
+  const n = 32;
+  const pts: Array<[number, number, number]> = [];
+  for (let i = 0; i <= Math.round(n * progress); i++) {
+    const t = i / n;
+    pts.push([from[0] + dx * t, height + Math.sin(Math.PI * t) * lift, -(from[1] + dy * t)]);
+  }
+  if (pts.length < 2) return null;
+  const head = (tip: [number, number, number], prev: [number, number, number], filled: boolean) => {
+    const vx = tip[0] - prev[0];
+    const vz = tip[2] - prev[2];
+    const vy = tip[1] - prev[1];
+    const l = Math.hypot(vx, vy, vz) || 1;
+    const ux = vx / l;
+    const uy = vy / l;
+    const uz = vz / l;
+    // Perpendicular in the horizontal plane.
+    const px = -uz;
+    const pz = ux;
+    const s = 5;
+    const a: [number, number, number] = [tip[0] - ux * s + px * s * 0.55, tip[1] - uy * s, tip[2] - uz * s + pz * s * 0.55];
+    const b: [number, number, number] = [tip[0] - ux * s - px * s * 0.55, tip[1] - uy * s, tip[2] - uz * s - pz * s * 0.55];
+    return filled ? (
+      <Line points={[a, tip, b, a]} color={color} lineWidth={3} />
+    ) : (
+      <Line points={[a, tip, b]} color={color} lineWidth={2} />
+    );
+  };
+  const last = pts[pts.length - 1]!;
+  const prev = pts[pts.length - 2]!;
+  return (
+    <>
+      <Line points={pts} color={color} lineWidth={2} />
+      {progress >= 0.98 && head(last, prev, kind !== 'mountain')}
+      {progress >= 0.98 && kind === 'both' && head(pts[0]!, pts[1]!, true)}
+    </>
+  );
+}
+
+/** Push arrow (reverse folds, sinks): a hollow arrow pressing on the spine. */
+export function PushArrow({ at, dir, height, color }: { readonly at: Vec2; readonly dir: Vec2; readonly height: number; readonly color: string }) {
+  const l = Math.hypot(dir[0], dir[1]) || 1;
+  const u: Vec2 = [dir[0] / l, dir[1] / l];
+  const p: Vec2 = [-u[1], u[0]];
+  const L = 16;
+  const W = 3.2;
+  const H = 6.5;
+  // The arrow starts at `at` and points along `dir`.
+  const base = at;
+  const tip: Vec2 = [at[0] + u[0] * L, at[1] + u[1] * L];
+  const neck: Vec2 = [tip[0] - u[0] * (L * 0.45), tip[1] - u[1] * (L * 0.45)];
+  const pt = (q: Vec2, s: number): [number, number, number] => [q[0] + p[0] * s, height, -(q[1] + p[1] * s)];
+  const outline = [pt(tip, 0), pt(neck, H), pt(neck, W), pt(base, W), pt(base, -W), pt(neck, -W), pt(neck, -H), pt(tip, 0)];
+  return <Line points={outline} color={color} lineWidth={2.5} />;
+}

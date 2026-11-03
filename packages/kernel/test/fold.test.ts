@@ -5,6 +5,8 @@ import {
   flatView,
   fold,
   frontUp,
+  fromFold,
+  toFold,
   orderOf,
   stackAt,
   type KernelState,
@@ -195,5 +197,27 @@ describe('burnish', () => {
   it('refuses when there is no fold on that line', () => {
     const r = apply(sheet(), { type: 'burnish', params: { line, amount: 1 } } as Move);
     expect(!r.ok && r.reason).toBe('missed');
+  });
+});
+
+describe('FOLD import fails closed', () => {
+  const folded = () => mustApply(mustApply(sheet(), foldMove([0, 0], [1, 1], [25, -25])), foldMove([0, 0], [1, -1], [-40, -30]));
+
+  it('opens its own export', () => {
+    const r = fromFold(JSON.parse(JSON.stringify(toFold(folded(), 'x'))));
+    expect(r.ok).toBe(true);
+  });
+
+  it('refuses a file whose layer order was tampered with', () => {
+    const file = JSON.parse(JSON.stringify(toFold(folded(), 'x')));
+    const rows = file['paperfold:state'].layerOrder as Array<[number, number, number]>;
+    rows[0]![2] = -rows[0]![2]!;
+    expect(fromFold(file)).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('refuses a file with missing parts instead of throwing', () => {
+    const file = JSON.parse(JSON.stringify(toFold(folded(), 'x')));
+    delete file['paperfold:state'].faces;
+    expect(fromFold(file)).toEqual({ ok: false, reason: 'invalid' });
   });
 });

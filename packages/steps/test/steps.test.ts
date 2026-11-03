@@ -98,6 +98,25 @@ describe('build steps', () => {
     expect(step!.hands.folding!.hand).toBe('left');
   });
 
+  it('places the tip right when two layers\' corners coincide up to rounding', () => {
+    // A 150 mm diagonal fold leaves two copies of one corner that differ by ~1e-14 mm; the
+    // outline hull used to lose the opposite corner and call the top-right tip "bottom right".
+    let h = createHistory(createSheet({ sizeMm: 150 }));
+    const s = Math.SQRT1_2;
+    const moves: Move[] = [
+      { type: 'fold', params: { line: { p: [0, 0], d: [-s, -s] }, seed: [73.3, -73.3], layers: 1, direction: 'valley' } },
+      { type: 'burnish', params: { line: { p: [0, 0], d: [-s, -s] }, amount: 1 } },
+      { type: 'reverseFold', params: { line: { p: [53, 70.5], d: [0.18884726955203154, -0.9820064708456571] }, seed: [66, 73], kind: 'inside' } },
+    ];
+    for (const m of moves) {
+      const r = perform(h, m);
+      if (!r.ok) throw new Error(r.reason);
+      h = r.history;
+    }
+    const { steps } = buildSteps(designLog(h));
+    expect(steps[1]!.caption).toEqual({ kind: 'reverse', reverse: 'inside', tip: { v: 'top', h: 'right', what: 'tip' } });
+  });
+
   it('the nested reverse-fold fixture builds verified steps', () => {
     const P2: Vec2 = [-20, 20];
     const Q2: Vec2 = [-35, 50];
