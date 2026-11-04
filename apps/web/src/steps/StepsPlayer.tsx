@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { type Group, Matrix4, MOUSE, NeutralToneMapping, Vector3 } from 'three';
 import type { PlayerStep } from '../kernel/api.ts';
 import { PRESETS } from '../presets.ts';
-import { captionText, moveNames, strings } from '../strings.en.ts';
+import { moveNames, stepText, strings } from '../strings.en.ts';
 import { useStore } from '../store.ts';
 
 const SHADOWS = new URLSearchParams(location.search).get('shadows') !== '0';
@@ -349,13 +349,15 @@ export function StepsPlayer() {
           <p className="muted">{strings.stepsEmpty}</p>
         ) : (
           <>
-            <p className="muted">{strings.stepsSummary(steps.length)}</p>
+            <p className="muted">
+              {strings.stepsSummary(steps.length)} {sv ? strings.difficulty(sv.difficulty.level) : ''}
+            </p>
             {sv && !sv.verified && <p className="warn">{strings.stepsUnverified}</p>}
             <ol>
               {steps.map((s, i) => (
                 <li key={i}>
                   <button className={i === index ? 'current' : ''} aria-current={i === index ? 'step' : undefined} onClick={() => go(i)}>
-                    <span className="n">{i + 1}.</span> {captionText(s.caption)}
+                    <span className="n">{i + 1}.</span> {stepText(s)}
                   </button>
                 </li>
               ))}
@@ -370,7 +372,7 @@ export function StepsPlayer() {
             <span className="muted">{strings.stepOf(index + 1, steps.length)}</span>
             {step.named && step.kind !== 'fold' && step.kind !== 'precrease' ? <span className="chip-inline">{moveNames[step.name]}</span> : null}
             {turn && (turn.kind === 'turn-over' || turn.kind === 'rotate') ? <SymbolIcon kind={turn.kind} /> : null}
-            <strong>{captionText(step.caption)}</strong>
+            <strong>{stepText(step)}</strong>
           </div>
           <div className="controls">
             <button onClick={() => go(index - 1)} disabled={index === 0} aria-label={strings.previous}>

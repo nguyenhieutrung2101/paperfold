@@ -30,10 +30,43 @@ describe('the crane, as build steps', () => {
     expect(steps.filter((s) => s.kind === 'precrease')).toHaveLength(2);
   });
 
+  it('says where the bases are, compresses repeats, and rates it', () => {
+    const { difficulty } = buildSteps(designLog(foldCrane()));
+    const bases = steps.filter((s) => s.base).map((s) => `${s.index}:${s.base}`);
+    const repeats = steps.filter((s) => s.repeat).map((s) => `${s.index}<-${s.repeat!.of}${s.repeat!.behind ? ' behind' : ''}`);
+    expect(bases).toEqual(['4:preliminary', '9:bird']);
+    // The second squash, kite fold and petal; the narrowing, front and back; the tail.
+    expect(repeats).toEqual(['4<-2 behind', '6<-5', '9<-7 behind', '11<-10', '13<-10 behind', '14<-13', '16<-15']);
+    expect(difficulty.level).toBe(3);
+  });
+
   it('every step has a caption and something to draw', () => {
     for (const s of steps) {
       expect(s.caption).toBeTruthy();
       if (s.kind !== 'turn-over' && s.kind !== 'rotate') expect(s.symbols.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('the crane, exported', () => {
+  it('draws a diagram sheet with every step and its sentence', async () => {
+    const { stepsSvg } = await import('../src/index.ts');
+    const { steps } = buildSteps(designLog(foldCrane()));
+    const svg = stepsSvg(steps, { title: 'Crane', text: (s) => `Step text ${s.index}` });
+    expect(svg.startsWith('<svg')).toBe(true);
+    for (const s of steps) expect(svg).toContain(`Step text ${s.index}`);
+    // Valley lines, fold arrows and push arrows all appear.
+    expect(svg).toContain('stroke-dasharray="7 4"');
+    expect(svg).toContain('marker-end="url(#head)"');
+    expect(svg).toContain('marker-end="url(#hollow)"');
+  });
+
+  it('writes a FOLD file with a frame per step', async () => {
+    const { toFoldSteps } = await import('@paperfold/kernel');
+    const { steps } = buildSteps(designLog(foldCrane()));
+    const fold = toFoldSteps(steps[steps.length - 1]!.after, steps.map((s) => ({ state: s.after, title: `${s.index + 1}` })), 'Crane');
+    expect(fold.file_frames).toHaveLength(1 + steps.length);
+    expect(fold.file_frames![steps.length]!['frame_title']).toBe(String(steps.length));
+    expect(JSON.parse(JSON.stringify(fold)).file_classes).toContain('diagrams');
   });
 });

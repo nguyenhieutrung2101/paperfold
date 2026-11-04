@@ -5,10 +5,15 @@ import type { Direction, Place } from './types.ts';
 export function footprintHull(state: KernelState): Vec2[] {
   const view = flatView(state);
   if (!view) return [];
+  return footprintHullOf([...view.vertexWorld.values()]);
+}
+
+/** Convex hull of points (counter-clockwise). */
+export function footprintHullOf(points: readonly Vec2[]): Vec2[] {
   // Snap to a 1e-6 mm grid and drop duplicates first: copies of one corner that differ by
   // rounding noise would otherwise sort out of line order and knock real corners off the hull.
   const seen = new Map<string, Vec2>();
-  for (const q of view.vertexWorld.values()) {
+  for (const q of points) {
     const r: Vec2 = [Math.round(q[0] * 1e6) / 1e6, Math.round(q[1] * 1e6) / 1e6];
     seen.set(`${r[0]},${r[1]}`, r);
   }

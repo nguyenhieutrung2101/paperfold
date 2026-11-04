@@ -1,4 +1,4 @@
-import type { FaceId, KernelState, Line2, Move, MoveName, OpId, Transition, Vec2 } from '@paperfold/kernel';
+import type { BaseName, FaceId, KernelState, Line2, Move, MoveName, OpId, Transition, Vec2 } from '@paperfold/kernel';
 
 export type StepKind = 'fold' | 'precrease' | 'unfold' | 'reverse' | 'squash' | 'petal' | 'crease' | 'turn-over' | 'rotate';
 
@@ -80,10 +80,22 @@ export interface Step {
   readonly creased: boolean;
   readonly symbols: readonly DiagramSymbol[];
   readonly hands: HandPlan;
+  /** This step makes a traditional base. */
+  readonly base?: BaseName;
+  /** The same as an earlier step, on the back or on the other side ("repeat"). */
+  readonly repeat?: { readonly of: number; readonly behind: boolean };
+}
+
+/** How hard a design is to fold, 1 (very easy) to 5 (complex), from its moves and layers. */
+export interface Difficulty {
+  readonly level: 1 | 2 | 3 | 4 | 5;
+  /** The weighted move count it comes from (for the curious). */
+  readonly score: number;
 }
 
 export interface StepsResult {
   readonly steps: readonly Step[];
+  readonly difficulty: Difficulty;
   /** Replaying every step from a flat sheet reproduces the design. */
   readonly verified: boolean;
   /** When the cleaned-up sequence didn't replay, the step that broke (steps are then uncompressed). */

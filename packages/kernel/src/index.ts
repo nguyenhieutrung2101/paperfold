@@ -36,6 +36,7 @@ export { applyMove } from './moves/apply.ts';
 
 export * from './validate/invariants.ts';
 export * from './recognize/recognize.ts';
+export * from './recognize/bases.ts';
 
 export * from './history/hash.ts';
 export * from './history/history.ts';

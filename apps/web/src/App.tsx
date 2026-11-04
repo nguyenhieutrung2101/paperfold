@@ -1,12 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
-import { creaseActive, exportFold, goTo, newSheet, openFold, openSteps, performMove, redo, undo } from './actions.ts';
+import {
+  creaseActive,
+  exportDiagrams,
+  exportFold,
+  exportStepsFold,
+  goTo,
+  newSheet,
+  openFold,
+  openSteps,
+  performMove,
+  printDiagrams,
+  redo,
+  undo,
+} from './actions.ts';
+
+/** Close the menu a button sits in. */
+const closeMenu = (e: { currentTarget: HTMLElement }) => e.currentTarget.closest('details')?.removeAttribute('open');
 import { FoldView } from './fold/FoldView.tsx';
 import type { Thumb, View } from './kernel/api.ts';
 import { ChoiceStrip, HoverBadge } from './fold/Choices.tsx';
 import { StepsPlayer } from './steps/StepsPlayer.tsx';
 import { LabView } from './lab/LabView.tsx';
 import { PRESET_ORDER, PRESETS, type PresetId } from './presets.ts';
-import { moveNames, strings } from './strings.en.ts';
+import { baseNames, moveNames, strings } from './strings.en.ts';
 import { saveTheme, useStore } from './store.ts';
 
 function hasWebGL2(): boolean {
@@ -49,7 +65,15 @@ function TopBar() {
           </button>
         </span>
         <button onClick={() => fileInput.current?.click()}>{strings.open}</button>
-        <button onClick={() => void exportFold()}>{strings.export}</button>
+        <details className="menu">
+          <summary>{strings.export}</summary>
+          <div className="menu-items">
+            <button onClick={(e) => (closeMenu(e), void exportFold())}>{strings.exportModel}</button>
+            <button onClick={(e) => (closeMenu(e), void exportStepsFold())}>{strings.exportStepsFold}</button>
+            <button onClick={(e) => (closeMenu(e), void exportDiagrams())}>{strings.exportDiagrams}</button>
+            <button onClick={(e) => (closeMenu(e), void printDiagrams())}>{strings.printDiagrams}</button>
+          </div>
+        </details>
         <input
           ref={fileInput}
           type="file"
@@ -211,18 +235,29 @@ function Timeline() {
         {view.timeline.map((t, i) => (
           <li key={t.id}>
             <button
-              className={`step ${t.current ? 'current' : ''}`}
+              className={`step ${t.current ? 'current' : ''} ${t.base ? 'is-base' : ''}`}
               onClick={() => void goTo(t.id)}
-              title={i === 0 ? strings.start : `${i}. ${t.label === 'start' ? strings.start : moveNames[t.label]}`}
+              title={i === 0 ? strings.start : `${i}. ${t.label === 'start' ? strings.start : moveNames[t.label]}${t.base ? ` · ${baseNames[t.base]}` : ''}`}
               aria-current={t.current ? 'step' : undefined}
               aria-label={i === 0 ? strings.start : `${i}. ${t.label === 'start' ? strings.start : moveNames[t.label]}`}
             >
               <ThumbSvg thumb={t.thumb} />
               <span className="step-n">{i === 0 ? '' : i}</span>
             </button>
+            {t.branch && (
+              <button
+                className="branch"
+                onClick={() => void goTo(t.branch!.next)}
+                title={strings.branchHelp(t.branch.index + 1, t.branch.count)}
+                aria-label={strings.branchHelp(t.branch.index + 1, t.branch.count)}
+              >
+                {t.branch.index + 1}/{t.branch.count}
+              </button>
+            )}
           </li>
         ))}
       </ol>
+      {view.base && <span className="base-chip">{baseNames[view.base]}</span>}
       <button onClick={() => void redo()} disabled={!view.canRedo} aria-label={strings.redo} title={strings.redo}>
         ↷
       </button>

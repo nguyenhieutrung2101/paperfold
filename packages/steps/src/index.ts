@@ -5,3 +5,4 @@
 export * from './types.ts';
 export * from './describe.ts';
 export * from './build.ts';
+export * from './svg.ts';

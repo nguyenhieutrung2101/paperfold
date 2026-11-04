@@ -29,6 +29,8 @@ import {
   type PlaneLine,
   type ReasonCode,
   recognize,
+  recognizeBase,
+  type BaseName,
   redo,
   type SheetOptions,
   type Snapshot,
@@ -36,12 +38,14 @@ import {
   stackAt,
   stackLevels,
   toFold,
+  toFoldSteps,
   type Transition,
   undo,
   type Vec2,
 } from '@paperfold/kernel';
 import type { MotionTransition } from '@paperfold/skin';
-import { buildSteps, designLog, type HandSide, type Step } from '@paperfold/steps';
+import { buildSteps, designLog, type HandSide, type Step, stepsSvg } from '@paperfold/steps';
+import { stepText, strings } from '../strings.en.ts';
 
 /** A tiny top view of a state for the timeline: face outlines bottom to top, 0..1 box. */
 export interface Thumb {
@@ -55,10 +59,16 @@ export interface TimelineEntry {
   readonly label: MoveName | 'start';
   readonly current: boolean;
   readonly thumb: Thumb;
+  /** The traditional base this state is, if any. */
+  readonly base: BaseName | null;
+  /** Other ways folded from the same state: which one this is, and the next one along. */
+  readonly branch: { readonly index: number; readonly count: number; readonly next: NodeId } | null;
 }
 
 export interface View {
   readonly snapshot: Snapshot;
+  /** The traditional base the current state is, if any. */
+  readonly base: BaseName | null;
   readonly timeline: readonly TimelineEntry[];
   readonly canUndo: boolean;
   readonly canRedo: boolean;
@@ -154,12 +164,15 @@ export interface PlayerStep {
   readonly main: Snapshot;
   readonly after: Snapshot;
   readonly transition: Transition | null;
+  readonly base: BaseName | null;
+  readonly repeat: { readonly of: number; readonly behind: boolean } | null;
 }
 
 export interface StepsView {
   readonly steps: readonly PlayerStep[];
   readonly verified: boolean;
   readonly brokenAt?: number;
+  readonly difficulty: { readonly level: 1 | 2 | 3 | 4 | 5; readonly score: number };
 }
 
 /** Lines of the folded edges around the top `k` layers under p: where a flap could squash. */
@@ -533,14 +546,34 @@ export class KernelHost {
         })(),
         after: snapshot(s.after),
         transition: s.transition,
+        base: s.base ?? null,
+        repeat: s.repeat ?? null,
       })),
       verified: result.verified,
+      difficulty: result.difficulty,
       ...(result.brokenAt !== undefined ? { brokenAt: result.brokenAt } : {}),
     };
   }
 
   exportFold(title: string): string {
     return JSON.stringify(toFold(currentState(this.history), title), null, 1);
+  }
+
+  /** The build steps as files: a FOLD with a frame per step, and a diagram sheet (SVG). */
+  exportSteps(title: string, handedness: HandSide): { readonly fold: string; readonly svg: string; readonly count: number } {
+    const result = buildSteps(designLog(this.history), { handedness });
+    const text = (s: Step) => stepText({ caption: s.caption, base: s.base ?? null, repeat: s.repeat ?? null });
+    const fold = toFoldSteps(
+      currentState(this.history),
+      result.steps.map((s, i) => ({ state: s.after, title: `${i + 1}. ${text(s)}` })),
+      title,
+    );
+    const svg = stepsSvg(result.steps, {
+      title,
+      text,
+      subtitle: `${strings.stepsSummary(result.steps.length)} ${strings.difficulty(result.difficulty.level)}`,
+    });
+    return { fold: JSON.stringify(fold, null, 1), svg, count: result.steps.length };
   }
 
   importFold(text: string): View | { readonly error: 'bad-file' } {
@@ -662,13 +695,23 @@ export class KernelHost {
     const timeline = ids.map((id) => {
       const node = h.nodes.get(id)!;
       const parent = node.parent === null ? undefined : h.nodes.get(node.parent);
+      const siblings = parent ? parent.children : [];
+      const i = siblings.indexOf(id);
       return {
         id,
         label: parent ? this.nameOf(parent.state, node.state) : ('start' as const),
         current: id === h.current,
         thumb: this.thumbOf(node.state),
+        base: this.baseOf(node.state),
+        branch: siblings.length > 1 ? { index: i, count: siblings.length, next: siblings[(i + 1) % siblings.length]! } : null,
       };
     });
-    return { snapshot: snapshot(currentState(h)), timeline, canUndo: canUndo(h), canRedo: canRedo(h) };
+    return { snapshot: snapshot(currentState(h)), base: this.baseOf(currentState(h)), timeline, canUndo: canUndo(h), canRedo: canRedo(h) };
+  }
+
+  private bases = new WeakMap<KernelState, BaseName | null>();
+  private baseOf(s: KernelState): BaseName | null {
+    if (!this.bases.has(s)) this.bases.set(s, recognizeBase(s));
+    return this.bases.get(s)!;
   }
 }

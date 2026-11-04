@@ -3,7 +3,7 @@
  * Short, plain, warm, a little dry. Sentence case, contractions, second person, no
  * exclamation marks, no emoji.
  */
-import type { MoveName, ReasonCode } from '@paperfold/kernel';
+import type { BaseName, MoveName, ReasonCode } from '@paperfold/kernel';
 import type { CandidateKind } from '@paperfold/intent';
 import type { Caption, Direction, Place } from '@paperfold/steps';
 
@@ -17,6 +17,10 @@ export const strings = {
   lab: 'Bend lab',
   share: 'Share',
   export: 'Export',
+  exportModel: 'Model (.fold)',
+  exportStepsFold: 'Steps (.fold, a frame per step)',
+  exportDiagrams: 'Diagrams (SVG)',
+  printDiagrams: 'Print diagrams or save as PDF',
   open: 'Open',
   newSheet: 'New sheet',
   settings: 'Settings',
@@ -103,6 +107,8 @@ export const strings = {
   pushIn: 'Push in: tuck the tip inside',
   pushSub: 'Pull out to wrap it, or run along to crease',
   stripHint: (n: number) => `Scroll or 1–${Math.min(9, n)}`,
+  branchHelp: (i: number, n: number) => `Folded another way here: ${i} of ${n}. Show the next.`,
+  difficulty: (level: number) => `Difficulty: ${['very easy', 'easy', 'intermediate', 'tricky', 'complex'][level - 1]} (${level} of 5).`,
   // What a snapped drag lines up with.
   targetNames: {
     half: 'In half',
@@ -172,6 +178,15 @@ export function candidateName(kind: CandidateKind, layers: number): string {
   }
 }
 
+/** The traditional bases, when the model is one. */
+export const baseNames: Record<BaseName, string> = {
+  kite: 'Kite base',
+  blintz: 'Blintz base',
+  preliminary: 'Preliminary base',
+  waterbomb: 'Waterbomb base',
+  bird: 'Bird base',
+};
+
 /** Named moves, as chips. */
 export const moveNames: Record<MoveName, string> = {
   'valley-fold': 'Valley fold',
@@ -207,6 +222,12 @@ const dirWords: Record<Direction, string> = {
   'down-left': 'down and to the left',
   'down-right': 'down and to the right',
 };
+
+/** A step's sentence: its caption, or "repeat" for a step that does an earlier one again, and a note when it makes a base. */
+export function stepText(s: { readonly caption: Caption; readonly base: BaseName | null; readonly repeat: { readonly of: number; readonly behind: boolean } | null }): string {
+  const main = s.repeat ? `Repeat step ${s.repeat.of + 1} ${s.repeat.behind ? 'on the back' : 'on the other side'}.` : captionText(s.caption);
+  return s.base ? `${main} That's a ${baseNames[s.base].toLowerCase()}.` : main;
+}
 
 /** One short sentence per step (brief, section 7, "Caption"). */
 export function captionText(c: Caption): string {

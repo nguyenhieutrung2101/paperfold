@@ -17,6 +17,9 @@ import {
   pathTo,
   planeIsoOf,
   recognize,
+  recognizeBase,
+  intersectConvex,
+  signedArea,
   lineThrough,
   reflectPoint,
   sameFoldedState,
@@ -24,8 +27,8 @@ import {
   type Transition,
   type Vec2,
 } from '@paperfold/kernel';
-import { directionOf, footprintHull, placeOf } from './describe.ts';
-import type { Caption, DiagramSymbol, HandPlan, HandSide, Step, StepKind, StepsResult } from './types.ts';
+import { directionOf, footprintHull, footprintHullOf, placeOf } from './describe.ts';
+import type { Caption, DiagramSymbol, Difficulty, HandPlan, HandSide, Step, StepKind, StepsResult } from './types.ts';
 
 /** The designer's current branch: ops in order and the state after each. */
 export interface DesignLog {
@@ -215,13 +218,139 @@ function onStationaryPaper(before: KernelState, p: Vec2, l: Line2): boolean {
  */
 export function buildSteps(log: DesignLog, options: StepOptions = {}): StepsResult {
   const cleanup = options.cleanup ?? true;
-  const steps = group(log, cleanup).map((g, index) => makeStep(log, g, index, options.handedness ?? 'right'));
+  const made = group(log, cleanup).map((g, index) => makeStep(log, g, index, options.handedness ?? 'right'));
+  const steps = markRepeats(markBases(made));
+  const difficulty = difficultyOf(steps);
   const design = log.states[log.states.length - 1]!;
   const check = verifySteps(log.initial, steps, design);
-  if (check.ok) return { steps, verified: true };
-  if (!cleanup) return { steps, verified: false, brokenAt: check.brokenAt };
+  if (check.ok) return { steps, verified: true, difficulty };
+  if (!cleanup) return { steps, verified: false, brokenAt: check.brokenAt, difficulty };
   const raw = buildSteps(log, { ...options, cleanup: false });
-  return { steps: raw.steps, verified: raw.verified, brokenAt: check.brokenAt };
+  return { steps: raw.steps, verified: raw.verified, brokenAt: check.brokenAt, difficulty: raw.difficulty };
+}
+
+/** The step where the model becomes a traditional base says so. */
+function markBases(steps: readonly Step[]): Step[] {
+  return steps.map((s) => {
+    const base = recognizeBase(s.after);
+    return base && base !== recognizeBase(s.before) ? { ...s, base } : s;
+  });
+}
+
+const sameLine2 = (a: Line2, b: Line2, tol = 1e-3) =>
+  Math.abs(a.d[0] * b.d[1] - a.d[1] * b.d[0]) < tol && Math.abs((b.p[0] - a.p[0]) * a.d[1] - (b.p[1] - a.p[1]) * a.d[0]) < tol * 100;
+const mirrorLine = (l: Line2, axis: Line2): Line2 => {
+  const p = reflectPoint(axis, l.p);
+  const q = reflectPoint(axis, [l.p[0] + l.d[0], l.p[1] + l.d[1]]);
+  return { p, d: [q[0] - p[0], q[1] - p[1]] };
+};
+
+/**
+ * Repeats (brief, section 7, "Repeat compression"): a step that does what an earlier one did,
+ * on the back (the same fold after a turn-over) or on the other side (mirrored across the
+ * model's middle), is marked as a repeat of it, so the diagrams say "Repeat on the back".
+ */
+function markRepeats(steps: readonly Step[]): Step[] {
+  const out = [...steps];
+  const comparable = (s: Step) => s.kind !== 'turn-over' && s.kind !== 'rotate' && s.line !== null;
+  for (let j = 1; j < out.length; j++) {
+    const b = out[j]!;
+    if (!comparable(b)) continue;
+    // The model's mirror lines through its middle, before the first of the two folds.
+    const axesOf = (st: Step): Line2[] => {
+      const hull = footprintHull(st.before);
+      const c = hull.reduce((m, p) => [m[0] + p[0] / hull.length, m[1] + p[1] / hull.length] as Vec2, [0, 0] as Vec2);
+      const size = Math.max(...hull.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1])), 1);
+      const symmetric = (ax: Line2) =>
+        hull.every((p) => {
+          const q = reflectPoint(ax, p);
+          return hull.some((r) => Math.hypot(r[0] - q[0], r[1] - q[1]) < 1e-3 * size);
+        });
+      return ([[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2], [Math.SQRT1_2, -Math.SQRT1_2]] as Vec2[])
+        .map((d): Line2 => ({ p: c, d }))
+        .filter(symmetric);
+    };
+    // Nearest earlier step first, back to the last turn-over but one.
+    let turns = 0;
+    for (let i = j - 1; i >= 0 && turns <= 1; i--) {
+      const a = out[i]!;
+      if (a.kind === 'turn-over') {
+        turns++;
+        continue;
+      }
+      if (a.kind === 'rotate') break;
+      if (!comparable(a) || a.kind !== b.kind || a.name !== b.name) continue;
+      if (turns === 1) {
+        // On the back: the same fold, seen through the turn-over.
+        const turn = out.slice(i + 1, j).find((x) => x.kind === 'turn-over')!.transition;
+        if (turn && turn.kind === 'turnOver' && sameLine2(mirrorLine(a.line!, turn.axis), b.line!)) {
+          out[j] = { ...b, repeat: { of: i, behind: true } };
+          break;
+        }
+      } else if (axesOf(a).some((ax) => sameLine2(mirrorLine(a.line!, ax), b.line!) && sameRegion(movedPoints(a).map((p) => reflectPoint(ax, p)), movedPoints(b)))) {
+        // On the other side: the model is symmetric across a middle line, and so are the folds.
+        out[j] = { ...b, repeat: { of: i, behind: false } };
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** Corners of the paper a step moves (table plane, before it moves). */
+function movedPoints(s: Step): Vec2[] {
+  const tr = s.transition;
+  if (!tr || !('moving' in tr) || !('startPlacements' in tr)) return [];
+  return tr.moving.flatMap((f) => {
+    const start = tr.startPlacements.get(f);
+    if (!start || !s.after.cp.faces.has(f)) return [];
+    const iso = planeIsoOf(start);
+    return materialPolygon(s.after.cp, f).map((p) => applyPlaneIso(iso, p));
+  });
+}
+
+/** About the same region: their outlines overlap by at least 80% of the larger one. */
+function sameRegion(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  if (a.length < 3 || b.length < 3) return false;
+  const ha = footprintHullOf(a);
+  const hb = footprintHullOf(b);
+  const area = (poly: readonly Vec2[]) => Math.abs(signedArea(poly));
+  const common = area(intersectConvex(ha, hb));
+  return common >= 0.8 * Math.max(area(ha), area(hb));
+}
+
+const WEIGHT: Record<StepKind, number> = {
+  fold: 1,
+  precrease: 1.5,
+  unfold: 0.5,
+  crease: 0.3,
+  'turn-over': 0.2,
+  rotate: 0.2,
+  reverse: 3,
+  squash: 3,
+  petal: 4,
+};
+
+/** Weighted moves, plus deep stacks (hard to fold neatly): 1 very easy … 5 complex. */
+function difficultyOf(steps: readonly Step[]): Difficulty {
+  let score = steps.reduce((sum, s) => sum + (s.repeat ? 0.6 : 1) * WEIGHT[s.kind], 0);
+  const last = steps[steps.length - 1]?.after;
+  if (last) {
+    let deepest = 0;
+    for (const f of last.cp.faces.keys()) {
+      let above = 0;
+      for (const [k] of last.folded.layerOrder) {
+        const lo = k % 2097152;
+        const hi = (k - lo) / 2097152;
+        if (lo === f || hi === f) above++;
+      }
+      deepest = Math.max(deepest, above);
+    }
+    if (deepest > 16) score += 6;
+    else if (deepest > 8) score += 3;
+  }
+  const level = score < 10 ? 1 : score < 25 ? 2 : score < 40 ? 3 : score < 70 ? 4 : 5;
+  return { level, score: Math.round(score * 10) / 10 };
 }
 
 export function verifySteps(

@@ -108,6 +108,34 @@ export function toFold(state: KernelState, title = 'Paperfold model'): FoldFile 
   };
 }
 
+/**
+ * A design and its build steps in one FOLD file: the usual crease pattern and folded form,
+ * then one folded-form frame per step (after it), titled with the step's sentence. Each step
+ * frame stands alone (its own vertices, edges, faces and layer order), because creases appear
+ * as the model is folded.
+ */
+export function toFoldSteps(design: KernelState, steps: ReadonlyArray<{ readonly state: KernelState; readonly title: string }>, title = 'Paperfold model'): FoldFile {
+  const base = toFold(design, title);
+  const frames = steps.map(({ state, title: t }) => {
+    const f = toFold(state, t);
+    const folded = f.file_frames![0]!;
+    return {
+      frame_title: t,
+      frame_classes: ['foldedForm'],
+      frame_attributes: ['3D'],
+      frame_inherit: false,
+      frame_unit: 'mm',
+      vertices_coords: folded['vertices_coords'],
+      edges_vertices: f.edges_vertices,
+      edges_assignment: folded['edges_assignment'],
+      edges_foldAngle: folded['edges_foldAngle'],
+      faces_vertices: f.faces_vertices,
+      faceOrders: folded['faceOrders'],
+    };
+  });
+  return { ...base, file_classes: ['singleModel', 'diagrams'], file_frames: [...(base.file_frames ?? []), ...frames] };
+}
+
 function exactState(state: KernelState): ExactState {
   const { cp, folded, next, paper } = state;
   return {

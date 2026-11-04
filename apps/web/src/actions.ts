@@ -146,6 +146,41 @@ export async function exportFold(): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function download(text: string, name: string, type: string): void {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const fileBase = () => (useStore.getState().title || strings.untitled).replace(/[^\w\- ]+/g, '').trim() || 'paperfold';
+
+/** The build steps as a FOLD file, one frame per step. */
+export async function exportStepsFold(): Promise<void> {
+  const r = await kernel().exportSteps(useStore.getState().title || strings.untitled, useStore.getState().handedness);
+  download(r.fold, `${fileBase()} steps.fold`, 'application/json');
+}
+
+/** The diagram sheet as an SVG file. */
+export async function exportDiagrams(): Promise<void> {
+  const r = await kernel().exportSteps(useStore.getState().title || strings.untitled, useStore.getState().handedness);
+  download(r.svg, `${fileBase()} diagrams.svg`, 'image/svg+xml');
+}
+
+/** The diagram sheet in a print window: print it, or save it as a PDF from the print dialog. */
+export async function printDiagrams(): Promise<void> {
+  const r = await kernel().exportSteps(useStore.getState().title || strings.untitled, useStore.getState().handedness);
+  const w = window.open('', '_blank');
+  if (!w) return;
+  w.document.title = useStore.getState().title || strings.untitled;
+  w.document.body.style.margin = '0';
+  w.document.body.innerHTML = `<style>@page { margin: 12mm } svg { width: 100%; height: auto }</style>${r.svg}`;
+  w.setTimeout(() => w.print(), 300);
+}
+
 export async function openFold(file: File): Promise<void> {
   const text = await file.text();
   const r = await kernel().importFold(text);
