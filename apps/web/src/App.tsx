@@ -127,6 +127,13 @@ function SidePanel() {
         </span>
       </label>
       <label className="toggle">
+        <input type="checkbox" checked={s.relaxed} onChange={(e) => s.set({ relaxed: e.target.checked })} />
+        <span>
+          {strings.relaxed}
+          <small>{strings.relaxedHelp}</small>
+        </span>
+      </label>
+      <label className="toggle">
         <input type="checkbox" checked={s.autoCrease} onChange={(e) => s.set({ autoCrease: e.target.checked })} />
         <span>
           {strings.autoCrease}
@@ -287,6 +294,9 @@ function useKeyboard() {
         void performMove({ type: 'rotate', params: { degrees: -45 } });
       } else if (!mod && e.key.toLowerCase() === 'c') {
         void creaseActive();
+      } else if (!mod && e.key.toLowerCase() === 'r') {
+        const st = useStore.getState();
+        st.set({ relaxed: !st.relaxed });
       }
     };
     window.addEventListener('keydown', onKey);

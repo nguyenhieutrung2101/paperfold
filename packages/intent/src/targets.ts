@@ -79,26 +79,24 @@ export function targetContext(snap: Snapshot, surface: Surface): TargetContext {
     const folded = c.left !== null && c.right !== null && Math.abs(c.angleDeg) === 180;
     const raw = c.left === null || c.right === null;
     // Lines you can see and line things up with: the outline (raw and folded edges) and creases.
+    // Visible when one of its own faces is on top just beside it (the line itself sits on the
+    // faces' boundary); an edge under another layer is hidden.
     const d: Vec2 = [(b[0] - a[0]) / dist(a, b), (b[1] - a[1]) / dist(a, b)];
-    // A crease is visible when one of its faces is on top just beside it (the crease itself
-    // sits on both faces' boundary).
     const mid: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     const side = (k: number) => surface.topAt([mid[0] - d[1] * k, mid[1] + d[0] * k]);
     const tops = [side(0.3), side(-0.3)];
-    const visible = raw || folded || tops.some((t) => t !== null && (t === c.left || t === c.right));
+    const visible = tops.some((t) => t !== null && (t === c.left || t === c.right));
     if (!visible) continue;
     segs.push({ a, b, line: { p: a, d }, kind: raw || folded ? 'edge' : 'crease' });
   }
-  // Points: corners you can pinch, middles of the visible edges and creases, crease meetings.
+  // Points: the middle of the sheet, corners you can pinch, middles of the visible edges and
+  // creases, crease meetings. Points closer than half a millimetre are one point, and the first
+  // kind wins: the middle of the sheet stays "the center" even when flap tips meet there.
   const points: Array<{ point: Vec2; kind: 'corner' | 'center' | 'midpoint' | 'crease-point' }> = [];
-  const seen = new Set<string>();
   const push = (point: Vec2, kind: (typeof points)[number]['kind']) => {
-    const k = key2(point);
-    if (seen.has(k)) return;
-    seen.add(k);
+    if (points.some((q) => dist(q.point, point) < 0.5)) return;
     points.push({ point, kind });
   };
-  for (const c of surface.corners) push(c, 'corner');
   // The middle of the sheet, where it lies now, if that part is on top.
   let center: Vec2 | null = null;
   const outline = snap.paper.outline;
@@ -110,7 +108,9 @@ export function targetContext(snap: Snapshot, surface: Surface): TargetContext {
     break;
   }
   if (center) push(center, 'center');
-  for (const s of segs) push([(s.a[0] + s.b[0]) / 2, (s.a[1] + s.b[1]) / 2], s.kind === 'edge' ? 'midpoint' : 'crease-point');
+  for (const c of surface.corners) push(c, 'corner');
+  // The middle of each whole visible edge or crease, not of every piece a crease cuts it into.
+  for (const m of mergeCollinear(segs)) push([(m.a[0] + m.b[0]) / 2, (m.a[1] + m.b[1]) / 2], m.kind === 'edge' ? 'midpoint' : 'crease-point');
   // Where visible creases cross each other or an edge, inside the paper.
   const creases = segs.filter((s) => s.kind === 'crease');
   for (const c of creases) {
@@ -191,6 +191,41 @@ export function pickTarget(targets: readonly FoldTarget[], pointer: Vec2, radius
   }
   if (prev && prev.score < 1.4 && (!best || best.score > prev.score - 0.35)) return prev;
   return best && best.score < 1 ? best : null;
+}
+
+/** Join pieces of the same kind that continue each other along one line. */
+function mergeCollinear(segs: readonly Seg[]): Seg[] {
+  const out: Seg[] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < segs.length; i++) {
+    if (used.has(i)) continue;
+    used.add(i);
+    const s = segs[i]!;
+    let lo = 0;
+    let hi = dist(s.a, s.b);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let j = 0; j < segs.length; j++) {
+        if (used.has(j)) continue;
+        const t = segs[j]!;
+        if (t.kind !== s.kind || Math.abs(cross2(t.line.d, s.line.d)) > 1e-6 || Math.abs(signedDistance(s.line, t.a)) > 1e-6) continue;
+        const ta = (t.a[0] - s.a[0]) * s.line.d[0] + (t.a[1] - s.a[1]) * s.line.d[1];
+        const tb = (t.b[0] - s.a[0]) * s.line.d[0] + (t.b[1] - s.a[1]) * s.line.d[1];
+        const tlo = Math.min(ta, tb);
+        const thi = Math.max(ta, tb);
+        if (tlo > hi + 1e-6 || thi < lo - 1e-6) continue; // not touching
+        lo = Math.min(lo, tlo);
+        hi = Math.max(hi, thi);
+        used.add(j);
+        grew = true;
+      }
+    }
+    const a: Vec2 = [s.a[0] + s.line.d[0] * lo, s.a[1] + s.line.d[1] * lo];
+    const b: Vec2 = [s.a[0] + s.line.d[0] * hi, s.a[1] + s.line.d[1] * hi];
+    out.push({ a, b, line: { p: a, d: s.line.d }, kind: s.kind });
+  }
+  return out;
 }
 
 function project(p: Vec2, l: Line2): Vec2 {

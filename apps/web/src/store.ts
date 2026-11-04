@@ -133,6 +133,8 @@ export interface Paperstate {
   /** What the user picked last time for each kind of press (it leads when valid). */
   readonly preferredByZone: Partial<Record<ZoneKind, CandidateKind>>;
   readonly hover: HoverView | null;
+  /** Relaxed folds: free flaps spring a little open so the layers show (R). */
+  readonly relaxed: boolean;
   readonly peek: PeekView | null;
   /** Set while a drag is live: pick alternative i (the strip, for touch). */
   readonly choose: ((i: number) => void) | null;
@@ -189,6 +191,7 @@ export const useStore = create<Paperstate & PaperActions>((set) => ({
   lastRefusal: null,
   preferredByZone: {},
   hover: null,
+  relaxed: false,
   peek: null,
   choose: null,
   handedness: 'right',

@@ -39,6 +39,8 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
   // The hover curl: which peek is showing and how far it's open.
   const shownPeek = useRef<PeekView | null>(null);
   const peekTheta = useRef(0);
+  // How relaxed the folds are drawn (0 pressed flat, 1 relaxed).
+  const relaxAmt = useRef(0);
 
   useFrame((_, dt) => {
     const now = performance.now();
@@ -62,9 +64,18 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
       return;
     }
     if (!drag) shownTheta.current = 0;
+    // Relaxed folds: free flaps spring a little open, like paper you haven't pressed flat. The
+    // paper presses flat while you hold it or a fold is landing, then breathes out again.
+    const { relaxed, hover } = useStore.getState();
+    const pose = snap && params && active ? foldPose(active, snap, now, paperMode, creaseOverlay) : null;
+    const relaxTarget = relaxed && !drag && !hover?.pressed && !(pose?.animating ?? false) ? 1 : 0;
+    relaxAmt.current = reducedMotion() ? relaxTarget : relaxAmt.current + (relaxTarget - relaxAmt.current) * Math.min(1, dt * (relaxTarget > relaxAmt.current ? 5 : 12));
+    if (Math.abs(relaxAmt.current - relaxTarget) < 0.002) relaxAmt.current = relaxTarget;
+    const relaxing = relaxAmt.current > 0;
     // Hovering a corner: the layers you'd pick up curl up a little (about 50°), and settle back
-    // when you move away. A real, validated fold of that corner, shown part-way.
-    if (drag?.preview) {
+    // when you move away. A real, validated fold of that corner, shown part-way. (Not while
+    // relaxed: the flaps are already showing themselves.)
+    if (drag?.preview || relaxed || relaxing) {
       shownPeek.current = null;
       peekTheta.current = 0;
     } else if (snap && params && (peek || shownPeek.current)) {
@@ -84,8 +95,13 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
         return;
       }
     }
-    if (snap && params && active) {
-      const pose = foldPose(active, snap, now, paperMode, creaseOverlay);
+    if (snap && params && relaxing) {
+      const key = `relax:${snap.hash}:${paperMode}:${relaxAmt.current.toFixed(3)}`;
+      if (settledKey.current !== key || !moving) {
+        setMoving({ key, frame: buildFrame(snap, params, undefined, relaxAmt.current) });
+        settledKey.current = key;
+      }
+    } else if (snap && params && active && pose) {
       const key = `${active.key}:${snap.hash}:${paperMode}`;
       if (!pose.motion) {
         if (moving) setMoving(null);

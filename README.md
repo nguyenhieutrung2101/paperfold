@@ -20,7 +20,8 @@ away, with faint dots showing where they land. Push a folded edge in to tuck the
 out to wrap it around (outside), or run along it to crease it. While the button is down, scroll (or
 Tab, 1–9) to pick how many layers or another way to fold; small pictures by the pointer show the
 choices. Shift takes every layer, Ctrl/Cmd folds freehand, double-click or C creases the whole fold.
-Hold Space and press to pin the paper. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes, K folds with the
+Hold Space and press to pin the paper. Press R for relaxed folds: flaps spring a little open so you
+can see the layers. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes, K folds with the
 keyboard. Drag the table to orbit. **Steps** plays your design back as build steps with hands,
 symbols and captions. The **Bend lab** is the paper-realism playground.
 

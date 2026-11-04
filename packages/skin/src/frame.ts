@@ -1,6 +1,8 @@
 import {
   add3,
+  apply,
   compose,
+  IDENTITY,
   applyMaterial,
   applyPlaneIso,
   clipHalfPlane,
@@ -27,6 +29,7 @@ import {
 import { type BendLayer, bendPoint, bendTangent } from './bend.ts';
 import { faceHeights } from './heights.ts';
 import { type MeshData, MeshBuilder } from './meshBuilder.ts';
+import { planRelax } from './relax.ts';
 import { planReverse } from './reverse.ts';
 
 export interface SkinParams {
@@ -189,6 +192,17 @@ function rigidMapper(tr: Rigid3, height: number, moving: boolean): FaceMapper {
 
 const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
+/** A resting face turned by relaxed folds: its 3D position, height included, moved rigidly. */
+function relaxedMapper(placement: Rigid3, height: number, t: Rigid3): FaceMapper {
+  const base = staticMapper(placement, height);
+  const rot: Rigid3 = { r: t.r, t: [0, 0, 0] };
+  return {
+    moving: true,
+    pos: (p) => apply(t, base.pos(p)),
+    normal: (p) => apply(rot, base.normal(p)),
+  };
+}
+
 const normalize3 = (v: Vec3): Vec3 => {
   const l = len3(v) || 1;
   return [v[0] / l, v[1] / l, v[2] / l];
@@ -206,12 +220,16 @@ function outward(a: Vec2, b: Vec2): Vec2 {
  * Where the skin puts a material point of a face (mid-surface, world mm). Exposed for
  * tests and for hit-testing; buildFrame uses the same mappers.
  */
-export function skinPoint(snap: Snapshot, params: SkinParams, face: FaceId, p: Vec2, motion?: FoldMotion): Vec3 {
-  return faceMappers(snap, params, motion).mappers.get(face)!.pos(p);
+export function skinPoint(snap: Snapshot, params: SkinParams, face: FaceId, p: Vec2, motion?: FoldMotion, relax = 0): Vec3 {
+  return faceMappers(snap, params, motion, relax).mappers.get(face)!.pos(p);
 }
 
-function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion) {
-  const after = faceHeights(snap, params.layerGapMm);
+/** Relaxed folds also spread the layers a little (up to this many times the paper's gap). */
+const RELAX_SPREAD = 3;
+
+function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, relax = 0) {
+  const gap = motion ? params.layerGapMm : params.layerGapMm * (1 + RELAX_SPREAD * relax);
+  const after = faceHeights(snap, gap);
   const mappers = new Map<FaceId, FaceMapper>();
   let topHeight = 0;
   let rhoMax = 0;
@@ -252,6 +270,15 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion) {
     }
     for (let i = 0; i <= 32; i++) rhoMax = Math.max(rhoMax, rhoAt(-snap.sizeMm * 2 + (snap.sizeMm * 4 * i) / 32));
     topHeight += 2 * rhoMax;
+  } else if (relax > 0) {
+    // Relaxed folds (relax.ts): free flaps open a little about their folds.
+    const plan = planRelax(snap, after, gap);
+    for (const f of snap.faces) {
+      const h = after.get(f.id)!;
+      const t = plan.transformOf(f.id, relax);
+      mappers.set(f.id, t === IDENTITY ? staticMapper(f.placement, h) : relaxedMapper(f.placement, h, t));
+      topHeight = Math.max(topHeight, h);
+    }
   } else {
     for (const f of snap.faces) {
       const h = after.get(f.id)!;
@@ -266,8 +293,8 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion) {
  * Build the paper's geometry for a kernel snapshot, optionally with a fold in motion.
  * The skin only reads the kernel's state; it never changes what the kernel decided.
  */
-export function buildFrame(snap: Snapshot, params: SkinParams, motion?: FoldMotion): SkinFrame {
-  const { mappers, topHeight, rhoMax } = faceMappers(snap, params, motion);
+export function buildFrame(snap: Snapshot, params: SkinParams, motion?: FoldMotion, relax = 0): SkinFrame {
+  const { mappers, topHeight, rhoMax } = faceMappers(snap, params, motion, relax);
   const line: Line2 | null = motion ? motion.transition.line : null;
 
   const paper = new MeshBuilder(snap.sizeMm);

@@ -68,6 +68,45 @@ test('a sloppy corner drag still folds exactly in half', async ({ page }) => {
   expect(exact).toBe(true);
 });
 
+test('a blintz: corners pressed a little inside all meet exactly in the middle', async ({ page }) => {
+  const corners: Array<readonly [number, number]> = [[75, -75], [75, 75], [-75, 75], [-75, -75]];
+  for (const [i, c] of corners.entries()) {
+    // About 6 mm inside the corner, let go about 4 mm from the middle.
+    await dragMm(page, [c[0] - Math.sign(c[0]) * 4.2, c[1] - Math.sign(c[1]) * 4.2], [3, -2.5], async () => {
+      await expect(page.locator('.strip')).toContainText('To the center');
+    });
+    await expect(steps(page)).toHaveCount(i + 2);
+  }
+  // Every corner of the sheet now lies exactly on the middle.
+  const off = await page.evaluate(() => {
+    type F = { material: number[][]; placement: { r: number[]; t: number[] } };
+    const snap = (window as unknown as { __paperfold: { useStore: { getState(): { view: { snapshot: { faces: F[] } } } } } }).__paperfold.useStore.getState().view.snapshot;
+    let worst = 0;
+    for (const f of snap.faces) {
+      for (const m of f.material) {
+        const isCorner = (m[0] === 0 || m[0] === 150) && (m[1] === 0 || m[1] === 150);
+        if (!isCorner) continue;
+        const x = f.placement.r[0]! * m[0]! + f.placement.r[1]! * m[1]! + f.placement.t[0]!;
+        const z = f.placement.r[6]! * m[0]! + f.placement.r[7]! * m[1]! + f.placement.t[2]!;
+        worst = Math.max(worst, Math.hypot(x, z));
+      }
+    }
+    return worst;
+  });
+  expect(off).toBeLessThan(1e-6);
+});
+
+test('R relaxes the folds, and again presses them flat', async ({ page }) => {
+  await dragMm(page, [75, -75], [-75, 75]);
+  await expect(steps(page)).toHaveCount(2);
+  const relaxed = page.getByLabel('Relaxed folds');
+  await expect(relaxed).not.toBeChecked();
+  await page.keyboard.press('r');
+  await expect(relaxed).toBeChecked();
+  await page.keyboard.press('r');
+  await expect(relaxed).not.toBeChecked();
+});
+
 test('a top layer joined at the spine: the strip offers both layers', async ({ page }) => {
   // Book fold: right edge over to the left edge.
   await dragMm(page, [75, 0], [-75, 0]);

@@ -6,7 +6,9 @@ answers.
 **Status:** plan 1 is built (ADR-037, ADR-038; Playwright covers the corner fold, hover and scroll,
 push in and pull out). After the second review, two more fixes are in: reverse folds no longer
 tear mid-animation (ADR-039), and common folds snap from well away with visible targets (ADR-040).
-Plan 2 is next.
+After the third review: corner presses grab the corner itself so a blintz meets exactly in the middle
+(ADR-041), and **Relaxed folds** (R) lets free flaps spring open so the layers show (ADR-042). Plan 2
+is next.
 
 1. **Say what you mean with a mouse.** Grabbing a corner or an edge should do what you meant, and
    you should see what that will be before and during the drag.

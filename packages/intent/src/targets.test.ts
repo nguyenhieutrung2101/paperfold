@@ -1,6 +1,6 @@
 import { applyMove, createSheet, type KernelState, type Move, signedDistance, snapshot, type Vec2 } from '@paperfold/kernel';
 import { describe, expect, it } from 'vitest';
-import { foldTargets, pickTarget, surfaceOf, targetContext } from './index.ts';
+import { foldedEdges, foldTargets, pickTarget, surfaceOf, targetContext, zoneAt } from './index.ts';
 
 const must = (s: KernelState, m: Move) => {
   const r = applyMove(s, m);
@@ -69,5 +69,28 @@ describe('common folds', () => {
     expect(pick.target.kind).toBe('edge-to-crease');
     expect(Math.hypot(pick.target.landing[0] - landing[0], pick.target.landing[1] - landing[1])).toBeLessThan(1e-6);
     expect(on(pick.target.line, [-50, -50])).toBe(true);
+  });
+});
+
+describe('a blintz: four corners to the center', () => {
+  it('corners pressed a few millimetres inside all land exactly on the center', () => {
+    let s: KernelState = createSheet({ sizeMm: 150 });
+    const corners: Vec2[] = [[75, -75], [75, 75], [-75, 75], [-75, -75]];
+    for (const c of corners) {
+      const snap = snapshot(s);
+      const surface = surfaceOf(snap);
+      // A mouse press about 6 mm inside the corner: it pinches that corner.
+      const press: Vec2 = [c[0] - Math.sign(c[0]) * 4.2, c[1] - Math.sign(c[1]) * 4.2];
+      const zone = zoneAt(press, surface, foldedEdges(snap), { cornerMm: 8, nearMm: 3 });
+      expect(zone.kind).toBe('corner');
+      const grab = zone.kind === 'corner' ? zone.point : press;
+      const pick = pickTarget(foldTargets(grab, targetContext(snap, surface), { onEdgeMm: 3 }), [3, -2.5], 12.6, null)!;
+      expect(pick.target.kind).toBe('center');
+      expect(Math.hypot(pick.target.landing[0], pick.target.landing[1])).toBeLessThan(1e-9);
+      s = must(s, fold(pick.target.line.p, pick.target.line.d, press, 1));
+    }
+    // Every corner tip is exactly at the middle.
+    const tips = snapshot(s).faces.length;
+    expect(tips).toBe(5);
   });
 });

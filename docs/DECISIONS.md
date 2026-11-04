@@ -376,3 +376,41 @@ the other Huzita–Justin snaps and the angle snap, then freehand (Ctrl/Cmd skip
 **Shown:** faint dots at the dozen nearest landings while you drag, the target line highlighted for
 edge alignment, and the label names what you're doing: "In half", "To the center", "To the corner",
 "To the middle", "Edge to edge", "Edge to the crease".
+
+## ADR-041 · A corner press grabs the corner itself; the middle stays the middle
+
+**Problem.** Folding four corners to the middle (a blintz) didn't meet at the middle. With a mouse
+you press a few millimetres inside the corner you mean. The grab only snapped to a landmark within
+about 4 mm, so the point you pressed went to the middle and the corner itself landed about 6 mm off.
+The next corner then snapped "to the corner": to that misplaced tip, not the true middle. The error
+grew with every fold (9 mm by the second corner in a simulation).
+
+**Chose:**
+
+- **Corners:** a press within 28 px of a corner you can pinch grabs that corner exactly (the corner
+  zone, ADR-037, was 14 px). The corner, not the pressed point, is what the fold moves.
+- **The middle:** the middle of the sheet is added before any other point, and points within half a
+  millimetre merge with the first kind winning. When flap tips meet there, it's still "To the center".
+- **Midpoints:** "the middle of an edge" is the middle of the whole visible edge, not of each piece
+  creases cut it into (that gave pairs of dots side by side).
+- **Hidden lines:** edges and creases under another layer are no longer targets.
+
+Tested: a blintz with every press 6 mm inside its corner meets at the middle to within 1e-9 mm (unit)
+and 1e-6 mm (Playwright).
+
+## ADR-042 · Relaxed folds: let the paper breathe
+
+**Chose** a view, not a state (`skin/src/relax.ts`), toggled with R or the View panel. Every flap with
+nothing on top of it springs a little open about its fold, like a model you haven't pressed flat:
+up to 18°, less for long flaps (the far end rises at most 22 mm), on top of its parent's opening for
+a flap on a flap. Layers also spread to four times the paper's gap.
+
+**A flap**, for each folded edge, is the face above it plus everything joined to that face without
+crossing the edge's line. It opens only if it's joined to the rest along that line alone and nothing
+outside it lies on top. So the motion is a rigid turn up into empty space: no tears and no paper
+through paper (a corner folded over both layers keeps them shut, as it does in real paper).
+
+**While you fold**, the paper presses flat (a press, a drag or a landing fold) and breathes out again
+after; the hover curl is off while relaxed. Kernel states, validation and steps are unchanged.
+APPROXIMATION: the angles are a look, not a measured spring. Plan 2 draws a small,
+always-on version of the same thing (the crease's own rest angle) with shadows.

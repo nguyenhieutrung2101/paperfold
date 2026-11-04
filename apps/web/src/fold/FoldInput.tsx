@@ -42,8 +42,12 @@ const DECIDE_PX = 8;
 const NEAR_EDGE_PX = 10;
 /** A crease stroke that strays this far from its edge becomes a push or a pull. */
 const LEAVE_EDGE_PX = 15;
-/** A press this close to a corner pinches the corner, even on a folded edge. */
-const CORNER_PX = 14;
+/**
+ * A press this close to a corner pinches the corner exactly, even on a folded edge: with a
+ * mouse you press a little inside the corner you mean, and the corner itself must land where
+ * you take it (a few millimetres off at every fold of a blintz adds up).
+ */
+const CORNER_PX = 28;
 /** Scroll distance per step through the alternatives (a mouse notch is about 100). */
 const WHEEL_STEP = 60;
 const GRAB_MARGIN_PX = 6;
@@ -465,7 +469,9 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       }
 
       if (g.stage === 'grab') {
-        const snapped = snapFold(g.start, p, ctx, { radiusMm: snapRadius, freehand: g.freehand });
+        // A corner press grabs the corner itself.
+        const grabAt = g.zone.kind === 'corner' && !g.freehand ? g.zone.point : g.start;
+        const snapped = snapFold(grabAt, p, ctx, { radiusMm: snapRadius, freehand: g.freehand, snapGrab: g.zone.kind !== 'corner' });
         if (!snapped) {
           g.line = null;
           s.set({ drag: null });
