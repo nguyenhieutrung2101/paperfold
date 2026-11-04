@@ -227,6 +227,7 @@ export function petalFold(state: KernelState, params: PetalParams): MoveResult {
   });
   if (isRejection(built)) return built;
   const facesOf = (id: string) => [...built.groups].filter(([, g]) => g === id).map(([f]) => f);
+  const away = (d: Vec2): Vec2 => (signedDistance(hinge, [X[0] + d[0], X[1] + d[1]]) - signedDistance(hinge, X) > 0 ? d : [-d[0], -d[1]]);
   return {
     ok: true,
     state: built.state,
@@ -235,6 +236,8 @@ export function petalFold(state: KernelState, params: PetalParams): MoveResult {
       hinge: lineThrough(X, Y),
       x: X,
       y: Y,
+      edgeX: away(sx.line.d),
+      edgeY: away(sy.line.d),
       apex: A,
       moving: built.moving,
       center: facesOf('center'),

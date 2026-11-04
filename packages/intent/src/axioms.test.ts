@@ -90,13 +90,22 @@ describe('candidates', () => {
   const opts = { line: lineThrough([0, 0], [0, 1]), seed: [10, 0] as Vec2, layersAtSeed: 3 };
   const kinds = <T extends { candidate: { kind: string; layers: number } }>(xs: T[]) => xs.map((x) => `${x.candidate.kind}:${x.candidate.layers}`);
 
-  it('lists top, k and all layers, and both reverse folds', () => {
-    expect(candidateMoves(opts).map((c) => c.kind)).toEqual(['fold-top', 'fold-layers', 'fold-all', 'inside-reverse', 'outside-reverse']);
+  it('lists top, k and all layers, a petal, squashes, and both reverse folds', () => {
+    expect(candidateMoves(opts).map((c) => c.kind)).toEqual(['fold-top', 'fold-layers', 'fold-all', 'petal', 'squash', 'squash', 'inside-reverse', 'outside-reverse']);
   });
 
   it('a pick-up folds the layers you picked first, then more, then fewer; reverse folds last', () => {
     const all = candidateMoves(opts).map((candidate) => ({ candidate, ok: true }));
-    expect(kinds(orderCandidates(all, { allLayers: false }))).toEqual(['fold-top:1', 'fold-layers:2', 'fold-all:3', 'inside-reverse:3', 'outside-reverse:3']);
+    expect(kinds(orderCandidates(all, { allLayers: false }))).toEqual([
+      'fold-top:1',
+      'petal:1',
+      'fold-layers:2',
+      'fold-all:3',
+      'squash:2',
+      'squash:3',
+      'inside-reverse:3',
+      'outside-reverse:3',
+    ]);
     expect(kinds(orderCandidates(all, { allLayers: false, layers: 2 })).slice(0, 3)).toEqual(['fold-layers:2', 'fold-all:3', 'fold-top:1']);
     expect(orderCandidates(all, { allLayers: true })[0]!.candidate.kind).toBe('fold-all');
   });
@@ -110,8 +119,9 @@ describe('candidates', () => {
   it('what you picked last time leads when it is valid', () => {
     const all = candidateMoves(opts).map((candidate) => ({ candidate, ok: candidate.kind !== 'fold-top' }));
     expect(orderCandidates(all, { allLayers: false, preferred: 'inside-reverse' })[0]!.candidate.kind).toBe('inside-reverse');
-    // The top layer alone is invalid here (joined): the next plain fold leads.
-    expect(orderCandidates(all, { allLayers: false })[0]!.candidate.kind).toBe('fold-layers');
+    // The top layer alone is invalid here (joined): lifting it as a petal leads, then the next
+    // plain fold (the kernel refuses the petal unless the layer is held by two folded edges).
+    expect(kinds(orderCandidates(all, { allLayers: false })).slice(0, 2)).toEqual(['petal:1', 'fold-layers:2']);
   });
 
   it('keeps the first one when nothing is valid, so its refusal can be shown', () => {

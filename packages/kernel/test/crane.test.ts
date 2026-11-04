@@ -31,9 +31,9 @@ describe('the traditional crane (Phase 2 gate)', () => {
     const t = 75 * Math.tan(Math.PI / 8);
     expect(box(13)).toEqual([-31.1, 75, -31.1, 75].map((x) => Math.round(x * 10) / 10 + 0));
     void t;
-    // The crane: neck and tail up, each a thin point; the head turns the neck's tip down.
-    const end = states[states.length - 1]!;
-    const before = states[states.length - 2]!;
+    // The head (the step before the final turn) turns the neck's tip down: more faces.
+    const end = states[states.length - 2]!;
+    const before = states[states.length - 3]!;
     expect(flatView(end)!.faceIds.length).toBeGreaterThan(flatView(before)!.faceIds.length);
   });
 });

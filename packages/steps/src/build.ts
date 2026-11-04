@@ -17,6 +17,7 @@ import {
   pathTo,
   planeIsoOf,
   recognize,
+  lineThrough,
   reflectPoint,
   sameFoldedState,
   signedDistance,
@@ -163,7 +164,7 @@ function kindOf(log: DesignLog, i: number): StepKind {
 
 /** Outlines (table plane, before the move) of the faces a fold or reverse fold moves. */
 function movingOutlines(after: KernelState, tr: Transition): Array<{ face: FaceId; poly: Vec2[] }> {
-  if (tr.kind !== 'fold' && tr.kind !== 'reverse') return [];
+  if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal') return [];
   return tr.moving.map((f) => {
     const iso = planeIsoOf(tr.startPlacements.get(f)!);
     return { face: f, poly: materialPolygon(after.cp, f).map((p) => applyPlaneIso(iso, p)) };
@@ -272,6 +273,30 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
   }
   const hull = footprintHull(before);
   const line = lineOf(move);
+  if (transition && (transition.kind === 'squash' || transition.kind === 'petal')) {
+    const outlines = movingOutlines(log.states[first + 1]!, transition);
+    const polys = outlines.map((o) => o.poly);
+    const hinge = transition.hinge;
+    const hingeSeg = extentAlong(hinge, [hull]);
+    const symbols: DiagramSymbol[] = [];
+    if (hingeSeg) symbols.push({ kind: 'valley-line', a: hingeSeg[0], b: hingeSeg[1] });
+    if (transition.kind === 'squash') {
+      // Open the flap and press its folded edge down onto the hinge.
+      const bis = extentAlong(transition.bisector, polys);
+      if (bis) symbols.push({ kind: 'valley-line', a: bis[0], b: bis[1] });
+      const spine = extentAlong(transition.spine, polys);
+      const tip = spine ? (Math.hypot(spine[0][0] - transition.spine.p[0], spine[0][1] - transition.spine.p[1]) > Math.hypot(spine[1][0] - transition.spine.p[0], spine[1][1] - transition.spine.p[1]) ? spine[0] : spine[1]) : transition.spine.p;
+      const dir: Vec2 = [transition.hinge.d[0] - transition.spine.d[0], transition.hinge.d[1] - transition.spine.d[1]];
+      const dl = Math.hypot(dir[0], dir[1]) || 1;
+      symbols.push({ kind: 'push-arrow', at: tip, dir: [dir[0] / dl, dir[1] / dl] });
+      return { ...base, line: hinge, caption: { kind: 'squash' }, symbols, hands: NO_HANDS };
+    }
+    // Lift the tip on the hinge; the sides fold in along the kite lines.
+    const kites = [transition.x, transition.y].map((p) => extentAlong(lineThrough(transition.apex, p), polys)).filter((x): x is [Vec2, Vec2] => x !== null);
+    for (const k of kites) symbols.push({ kind: 'valley-line', a: k[0], b: k[1] });
+    symbols.push({ kind: 'valley-arrow', from: transition.apex, to: reflectPoint(transition.hinge, transition.apex) });
+    return { ...base, line: hinge, caption: { kind: 'petal', tip: { ...placeOf(before, transition.apex, hull), what: 'tip' } }, symbols, hands: NO_HANDS };
+  }
   if (move.type === 'burnish' || !transition || (transition.kind !== 'fold' && transition.kind !== 'reverse') || !line) {
     // A standalone crease: run a fingernail along the fold where it lies on the model.
     const seg = line ? extentAlong(line, [hull]) : null;

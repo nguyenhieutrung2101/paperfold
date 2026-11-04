@@ -1,4 +1,5 @@
 import type { Line2, Move, Transition, Vec2 } from '@paperfold/kernel';
+import { motionLine } from '@paperfold/skin';
 import { kernel } from './kernel/client.ts';
 import type { PerformResult, Refusal } from './kernel/api.ts';
 import { PRESETS } from './presets.ts';
@@ -40,7 +41,7 @@ function landed(r: Extract<PerformResult, { ok: true }>, fromTheta = 0): void {
   const tr: Transition = r.transition;
   const st = useStore.getState();
   const base = { view: r.view, stepsView: null, lastRefusal: null };
-  if (tr.kind === 'fold' || tr.kind === 'reverse') {
+  if (tr.kind === 'fold' || tr.kind === 'reverse' || tr.kind === 'squash' || tr.kind === 'petal') {
     st.set({
       ...base,
       active: { key: motionKey++, before: r.before, transition: tr, startedAt: performance.now(), creasedAt: null, fromTheta },
@@ -68,7 +69,7 @@ export async function commitMove(
   }
   landed(r, fromTheta);
   advanceFirstRun(1);
-  if (useStore.getState().autoCrease && (move.type === 'fold' || move.type === 'reverseFold')) await creaseActive();
+  if (useStore.getState().autoCrease && (move.type === 'fold' || move.type === 'reverseFold' || move.type === 'squash' || move.type === 'petal')) await creaseActive();
   return true;
 }
 
@@ -77,7 +78,7 @@ export async function creaseActive(at?: { x: number; y: number }): Promise<void>
   const st = useStore.getState();
   const active = st.active;
   if (!active) return;
-  const r = await kernel().perform({ type: 'burnish', params: { line: active.transition.line, amount: 1 } });
+  const r = await kernel().perform({ type: 'burnish', params: { line: motionLine(active.transition), amount: 1 } });
   if (!r.ok) {
     refused(r, at);
     return;

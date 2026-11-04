@@ -12,6 +12,8 @@ export type MoveName =
   | 'unfold'
   | 'inside-reverse-fold'
   | 'outside-reverse-fold'
+  | 'squash-fold'
+  | 'petal-fold'
   | 'crease'
   | 'turn-over'
   | 'rotate'
@@ -172,6 +174,26 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
       return { name: o === 1 ? 'valley-fold' : 'mountain-fold', confidence: 0.9 };
     }
     return { name: 'fold', confidence: 0.4 };
+  }
+
+  if (made.length > 0 && unfolded.length > 0) {
+    // Squash and petal folds unfold some folds and make others, meeting at a few points of
+    // the paper: a squash at one (the spine opens, the halfway creases fold, the hinge opens or
+    // closes), a petal at two (at each, a folded edge opens; the hinge and two kite creases fold).
+    const adj = adjacency(after.cp);
+    const madeIds = new Set(made.map((m) => m.seg.id));
+    const openIds = new Set(unfolded.map((m) => m.seg.id));
+    const verts = new Set<VertexId>([...made, ...unfolded].flatMap((m) => [...m.seg.v]));
+    let hubs = 0;
+    for (const v of verts) {
+      const around = adj.vertexEdges.get(v) ?? [];
+      const nMade = around.filter((e) => madeIds.has(e)).length;
+      const nOpen = around.filter((e) => openIds.has(e)).length;
+      if (nOpen >= 1 && nMade >= 2 && nOpen + nMade >= 4) hubs++;
+    }
+    if (hubs === 1) return { name: 'squash-fold', confidence: 0.85 };
+    if (hubs === 2) return { name: 'petal-fold', confidence: 0.85 };
+    return { name: 'fold', confidence: 0.3 };
   }
 
   if (unfolded.length > 0 && made.length === 0 && flipped.length === 0) return { name: 'unfold', confidence: 0.9 };

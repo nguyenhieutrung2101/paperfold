@@ -30,6 +30,7 @@ import { type BendLayer, bendPoint, bendTangent } from './bend.ts';
 import { faceHeights } from './heights.ts';
 import { type MeshData, MeshBuilder } from './meshBuilder.ts';
 import { planRelax } from './relax.ts';
+import { planPetal, planSquash } from './multi.ts';
 import { planReverse } from './reverse.ts';
 
 export interface SkinParams {
@@ -65,8 +66,15 @@ export function skinParamsFor(paper: Paper, mode: PaperMode): SkinParams {
 
 export type FoldTransition = Extract<Transition, { kind: 'fold' }>;
 export type ReverseTransition = Extract<Transition, { kind: 'reverse' }>;
+export type SquashTransition = Extract<Transition, { kind: 'squash' }>;
+export type PetalTransition = Extract<Transition, { kind: 'petal' }>;
 /** Transitions the skin can animate as a fold in motion. */
-export type MotionTransition = FoldTransition | ReverseTransition;
+export type MotionTransition = FoldTransition | ReverseTransition | SquashTransition | PetalTransition;
+
+/** The line a motion turns about first: the fold line, or a squash's or petal's hinge. */
+export function motionLine(tr: MotionTransition): Line2 {
+  return 'line' in tr ? tr.line : tr.hinge;
+}
 
 /** A fold in motion: the kernel's validated transition at angle theta. */
 export interface FoldMotion {
@@ -227,6 +235,12 @@ export function skinPoint(snap: Snapshot, params: SkinParams, face: FaceId, p: V
   return faceMappers(snap, params, motion, relax).mappers.get(face)!.pos(p);
 }
 
+/** skinPoint for many points of one pose: the face mappers are built once. */
+export function skinPointsOf(snap: Snapshot, params: SkinParams, motion?: FoldMotion, relax = 0): (face: FaceId, p: Vec2) => Vec3 {
+  const { mappers } = faceMappers(snap, params, motion, relax);
+  return (face, p) => mappers.get(face)!.pos(p);
+}
+
 /** Relaxed folds also spread the layers a little (up to this many times the paper's gap). */
 const RELAX_SPREAD = 3;
 
@@ -246,7 +260,7 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
     // other layers, and a soft loop (which lands 2·rho proud of the stack) would poke through
     // the flap that closes over it. Real paper squashes that loop between the layers; Phase 2
     // per-region heights can draw the bulge instead.
-    const sharpHinge = tr.kind === 'reverse';
+    const sharpHinge = tr.kind !== 'fold';
     rhoAt = sharpHinge ? () => 0 : (u) => params.softRadiusMm * (1 - Math.min(1, Math.max(0, motion.sharpnessAt(u))));
     // The sharpest section pins the flap.
     let rhoPin = Infinity;
@@ -254,7 +268,8 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
     const blend = Math.max(12, 4 * params.softRadiusMm);
     // Reverse folds move rigidly and never tear (reverse.ts): the flap opens flat and refolds
     // along the degree-4 motion, or, when it can't open, the tip swings over in one piece.
-    const plan = tr.kind === 'reverse' ? planReverse(snap, tr) : null;
+    // Squash and petal folds move rigidly too (multi.ts).
+    const plan = tr.kind === 'reverse' ? planReverse(snap, tr) : tr.kind === 'squash' ? planSquash(tr) : tr.kind === 'petal' ? planPetal(tr) : null;
     const lift = plan ? plan.lift(k) : 0;
     for (const f of snap.faces) {
       const parent = tr.parentOf.get(f.id) ?? f.id;
@@ -298,7 +313,8 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
  */
 export function buildFrame(snap: Snapshot, params: SkinParams, motion?: FoldMotion, relax = 0): SkinFrame {
   const { mappers, topHeight, rhoMax } = faceMappers(snap, params, motion, relax);
-  const line: Line2 | null = motion ? motion.transition.line : null;
+  const tr = motion?.transition;
+  const line: Line2 | null = tr ? motionLine(tr) : null;
 
   const paper = new MeshBuilder(snap.sizeMm);
   const edges = new MeshBuilder(snap.sizeMm);

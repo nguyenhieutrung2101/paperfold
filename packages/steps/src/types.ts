@@ -20,6 +20,8 @@ export type Caption =
   | { readonly kind: 'precrease'; readonly from: Place; readonly dir: Direction; readonly to: Place | null }
   | { readonly kind: 'unfold'; readonly from: Place }
   | { readonly kind: 'reverse'; readonly reverse: 'inside' | 'outside'; readonly tip: Place }
+  | { readonly kind: 'squash' }
+  | { readonly kind: 'petal'; readonly tip: Place }
   | { readonly kind: 'turn-over'; readonly axis: 'side' | 'top' }
   | { readonly kind: 'rotate'; readonly degrees: number }
   | { readonly kind: 'crease' };

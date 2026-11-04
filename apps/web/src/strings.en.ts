@@ -165,6 +165,10 @@ export function candidateName(kind: CandidateKind, layers: number): string {
       return `Fold ${layers} layers`;
     case 'fold-top':
       return 'Fold top layer';
+    case 'squash':
+      return 'Squash fold';
+    case 'petal':
+      return 'Petal fold';
   }
 }
 
@@ -175,6 +179,8 @@ export const moveNames: Record<MoveName, string> = {
   unfold: 'Unfold',
   'inside-reverse-fold': 'Inside reverse fold',
   'outside-reverse-fold': 'Outside reverse fold',
+  'squash-fold': 'Squash fold',
+  'petal-fold': 'Petal fold',
   crease: 'Crease',
   'turn-over': 'Turn over',
   rotate: 'Rotate',
@@ -219,6 +225,10 @@ export function captionText(c: Caption): string {
       return `Unfold ${placeText(c.from)}.`;
     case 'reverse':
       return c.reverse === 'inside' ? 'Push the tip inside.' : 'Wrap the tip around the outside.';
+    case 'squash':
+      return 'Lift the flap, open it, and squash it flat.';
+    case 'petal':
+      return `Lift ${placeText(c.tip)} up; the sides fold in.`;
     case 'turn-over':
       return c.axis === 'side' ? 'Turn it over.' : 'Turn it over, top to bottom.';
     case 'rotate': {

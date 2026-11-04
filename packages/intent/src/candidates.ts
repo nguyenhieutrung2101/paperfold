@@ -1,6 +1,6 @@
 import type { Line2, Move, Vec2 } from '@paperfold/kernel';
 
-export type CandidateKind = 'fold-top' | 'fold-layers' | 'fold-all' | 'inside-reverse' | 'outside-reverse';
+export type CandidateKind = 'fold-top' | 'fold-layers' | 'fold-all' | 'inside-reverse' | 'outside-reverse' | 'squash' | 'petal';
 
 export interface Candidate {
   readonly kind: CandidateKind;
@@ -37,6 +37,12 @@ export function candidateMoves(o: CandidateOptions): Candidate[] {
   for (let k = 2; k < o.layersAtSeed; k++) out.push(plain(k, 'fold-layers', k));
   if (o.layersAtSeed > 1) out.push(plain('all', 'fold-all', o.layersAtSeed));
   if (o.layersAtSeed > 1) {
+    // The top layer's corner, when it can't fold alone, lifts as a petal on the same line.
+    out.push({ kind: 'petal', layers: 1, move: { type: 'petal', params: { hinge: line, seed: o.seed, layers: 1, holds } } });
+    // A closed flap turned over its hinge can be squashed flat instead.
+    for (let k = 2; k <= o.layersAtSeed; k++) {
+      out.push({ kind: 'squash', layers: k, move: { type: 'squash', params: { hinge: line, seed: o.seed, layers: k, holds } } });
+    }
     for (const kind of ['inside', 'outside'] as const) {
       out.push({
         kind: kind === 'inside' ? 'inside-reverse' : 'outside-reverse',
@@ -77,6 +83,8 @@ export function orderCandidates<T extends { readonly candidate: Candidate; reado
     const li = lead.indexOf(c.kind);
     if (li >= 0) return li;
     const base = 100;
+    if (c.kind === 'petal') return base + (k === 1 ? 0.5 : 500);
+    if (c.kind === 'squash') return base + 600 + c.layers;
     if (c.kind === 'inside-reverse') return base + 900;
     if (c.kind === 'outside-reverse') return base + 901;
     if (opts.allLayers) return base + (c.kind === 'fold-all' ? 0 : 500 - c.layers);

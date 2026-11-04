@@ -89,7 +89,8 @@ function leg(label: string, a: 1 | -1): CraneStep {
 const head: CraneStep = {
   label: 'Reverse fold the head',
   move: (s) => {
-    const tip = extreme(s, rot(down, (150 * Math.PI) / 180));
+    // The neck's tip: the leg's tip reflected across the neck's reverse-fold line.
+    const tip = reflectPoint({ p: P, d: rot(down, (75 * Math.PI) / 180) }, B2);
     const nd = unit(P, tip);
     const n: Vec2 = [-nd[1], nd[0]];
     const v = flatView(s)!;
@@ -135,6 +136,8 @@ export const CRANE: readonly CraneStep[] = [
   leg('Reverse fold the neck', 1),
   leg('Reverse fold the tail', -1),
   head,
+  // Stand it up: wings up, neck and tail out to the sides.
+  { label: 'Rotate', move: () => ({ type: 'rotate', params: { degrees: -135 } }) },
 ];
 
 /** Fold the whole crane; throws on the first refusal. */

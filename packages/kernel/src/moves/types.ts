@@ -188,6 +188,9 @@ export type Transition =
       readonly hinge: Line2;
       readonly x: Vec2;
       readonly y: Vec2;
+      /** Unit directions of the folded edges from X and from Y, away from the hinge. */
+      readonly edgeX: Vec2;
+      readonly edgeY: Vec2;
       /** The petal's tip before the move. */
       readonly apex: Vec2;
       readonly moving: readonly FaceId[];

@@ -2,7 +2,7 @@ import { leftNormal, planeIsoOf, applyPlaneIso, type Snapshot, type Vec2 } from 
 import { OrbitControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { FoldArrow, FoldLine, Hand, type HandPoseName, PaperMesh, type PaperLook, PushArrow, SnapRing, Studio } from '@paperfold/render';
-import { buildFrame, type MotionTransition, type SkinFrame, skinParamsFor, skinPoint } from '@paperfold/skin';
+import { buildFrame, motionLine, type MotionTransition, type SkinFrame, skinParamsFor, skinPoint } from '@paperfold/skin';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type Group, Matrix4, MOUSE, NeutralToneMapping, Vector3 } from 'three';
 import type { PlayerStep } from '../kernel/api.ts';
@@ -60,7 +60,7 @@ function footprintCenter(snap: Snapshot): { c: Vec2; size: number } {
 function compose(step: PlayerStep, p: number, mode: 'real' | 'ideal'): SceneFrame {
   const params = skinParamsFor(step.main.paper, mode);
   const tr = step.transition;
-  const folds = tr && (tr.kind === 'fold' || tr.kind === 'reverse');
+  const folds = tr && (tr.kind === 'fold' || tr.kind === 'reverse' || tr.kind === 'squash' || tr.kind === 'petal');
   const handsIn = span(p, 0, BEAT.handsIn);
   const handsOut = 1 - span(p, step.kind === 'precrease' ? BEAT.unfoldEnd : BEAT.creaseEnd, 1);
   const handOpacity = 0.42 * Math.min(handsIn, handsOut);
@@ -73,7 +73,7 @@ function compose(step: PlayerStep, p: number, mode: 'real' | 'ideal'): SceneFram
     if (step.kind === 'precrease') theta = Math.PI * (1 - span(p, BEAT.creaseEnd, BEAT.unfoldEnd)) * span(p, BEAT.handsIn, BEAT.moveEnd);
     // The fingernail runs from the middle of the fold outward.
     const c = step.hands.crease;
-    const l = mt.line;
+    const l = motionLine(mt);
     let sharpnessAt: (u: number) => number = () => 0;
     if (creasing && c && p > BEAT.pause) {
       const ua = (c.a[0] - l.p[0]) * l.d[0] + (c.a[1] - l.p[1]) * l.d[1];

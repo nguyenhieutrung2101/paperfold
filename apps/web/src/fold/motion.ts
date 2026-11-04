@@ -5,7 +5,7 @@ import {
   type Snapshot,
   type Span,
 } from '@paperfold/kernel';
-import { type FoldMotion, type MotionTransition, type PaperMode } from '@paperfold/skin';
+import { type FoldMotion, motionLine, type MotionTransition, type PaperMode } from '@paperfold/skin';
 import type { CreaseOverlay } from '../store.ts';
 import type { ActiveFold } from '../store.ts';
 
@@ -44,7 +44,7 @@ export function creaseProfile(snap: Snapshot, tr: MotionTransition): CreaseProfi
   let restDeg = 0;
   let fullySharp = true;
   const ids = new Set(tr.newCreases);
-  const l = tr.line;
+  const l = motionLine(tr);
   for (const c of snap.creases) {
     if (!ids.has(c.id)) continue;
     const face = c.left ?? c.right;
@@ -124,7 +124,7 @@ export interface MotionFrame {
 /** A crease stroke on this fold's line adds sharpness where the finger has passed. */
 function withOverlay(base: (u: number) => number, tr: MotionTransition, overlay: CreaseOverlay | null): (u: number) => number {
   if (!overlay) return base;
-  const l = tr.line;
+  const l = motionLine(tr);
   const o = overlay.line;
   if (Math.abs(l.d[0] * o.d[1] - l.d[1] * o.d[0]) > 1e-3) return base;
   if (Math.abs((o.p[0] - l.p[0]) * l.d[1] - (o.p[1] - l.p[1]) * l.d[0]) > 0.05) return base;
@@ -151,8 +151,9 @@ export function foldPose(
   const profile = { ...raw, at: withOverlay(raw.at, active.transition, overlay) };
   const t = now - active.startedAt;
   const ideal = mode === 'ideal';
-  // A reverse fold's tip is held inside (or around) the flap: it doesn't spring back.
-  const reverse = active.transition.kind === 'reverse';
+  // A reverse fold's tip is held inside (or around) the flap, and a squash or petal fold is
+  // held by its own layers: they don't spring back. They move in stages: a little longer.
+  const reverse = active.transition.kind !== 'fold';
   const restTheta = ideal || reverse ? Math.PI : (profile.restDeg * Math.PI) / 180;
 
   let theta: number;
