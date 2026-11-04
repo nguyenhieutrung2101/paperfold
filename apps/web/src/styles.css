@@ -11,6 +11,9 @@
   --warm: #c8553d;
   --shadow: 0 6px 24px rgba(20, 30, 25, 0.12);
   --radius: 10px;
+  --paper-fill: #efe8dc;
+  --paper-under: #c8553d;
+  --accent-soft: rgba(31, 95, 174, 0.14);
   color-scheme: light;
 }
 
@@ -25,6 +28,9 @@
   --accent-text: #0e1a26;
   --warm: #ef8a6d;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --paper-fill: #e6dfd2;
+  --paper-under: #d9705a;
+  --accent-soft: rgba(143, 195, 255, 0.18);
   color-scheme: dark;
 }
 
@@ -338,29 +344,98 @@ input[type='range'] {
   color: var(--accent-text);
 }
 
-/* The chip by the pointer: what this drag will do. */
-.chip {
+/* By the pointer: what a press picks up, and every way a drag could fold. */
+.move-picture {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: block;
+}
+
+.hover-badge,
+.strip {
   position: fixed;
-  display: flex;
-  gap: 6px;
-  align-items: center;
   background: var(--surface-solid);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 12px;
   box-shadow: var(--shadow);
-  padding: 4px 10px;
+  z-index: 5;
+}
+
+.hover-badge {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 12px 5px 6px;
   pointer-events: none;
-  font-size: 13px;
+  white-space: nowrap;
+  animation: badge-in 160ms ease-out 220ms both;
+}
+
+.hover-badge strong,
+.strip-label strong {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.hover-badge .muted {
+  display: block;
+  font-size: 12px;
+}
+
+@keyframes badge-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.strip {
+  padding: 6px;
+  pointer-events: none;
+}
+
+.strip-tiles {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.strip-tiles button {
+  position: relative;
+  pointer-events: auto;
+  width: 48px;
+  height: 48px;
+  padding: 6px;
+  border-radius: 9px;
+  background: var(--surface-solid);
+  touch-action: none;
+}
+
+.strip-tiles button.on {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  padding: 5px;
+}
+
+.strip-tiles .key {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.strip-label {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 2px 6px 2px;
   white-space: nowrap;
 }
 
-.chip kbd {
-  font: inherit;
-  font-size: 11px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 4px;
-  color: var(--muted);
+.strip-label .muted {
+  font-size: 12px;
 }
 
 .step.current {
@@ -440,7 +515,8 @@ input[type='range'] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pointer-hint {
+  .pointer-hint,
+  .hover-badge {
     animation: none;
   }
 }

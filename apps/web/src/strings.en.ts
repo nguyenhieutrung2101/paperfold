@@ -57,6 +57,7 @@ export const strings = {
     'A fresh square. Grab a corner.',
     'Run your finger along the fold to crease it.',
     'Hold Space to keep the paper still.',
+    'Push a folded edge to tuck the tip in.',
   ],
   firstRunTouchHold: 'Rest a finger to hold the paper.',
 
@@ -90,6 +91,15 @@ export const strings = {
   allLayers: 'All layers',
   topLayer: 'Top layer',
   tabForMore: 'Tab',
+
+  // Hover and the choice strip (what a press will pick up, what else a drag could do)
+  layersName: (k: number, total: number) =>
+    k >= total ? (total <= 1 ? 'The sheet' : total === 2 ? 'Both layers' : 'All layers') : k === 1 ? 'Top layer' : `${k} layers`,
+  scrollLayers: (which: 'more' | 'fewer', pressed: boolean) => `${pressed ? 'Scroll' : 'Hold and scroll'} for ${which} layers`,
+  pushIn: 'Push in: tuck the tip inside',
+  pushSub: 'Pull out to wrap it, or run along to crease',
+  stripHint: 'Scroll or 1–4',
+  choicesLabel: 'Ways to make this fold',
   held: 'Held.',
   creased: 'Creased.',
 
@@ -110,7 +120,7 @@ export const strings = {
   labDirection: 'Direction',
 
   // Keyboard help
-  keys: 'Drag a corner to fold. Shift takes every layer, Tab tries another way. Run along a fold to crease it. Space holds. F turns over, Q and E rotate. K folds with the keyboard.',
+  keys: 'Drag a corner to fold. Push a folded edge to tuck the tip in. Hold the button and scroll for other ways. Run along a fold to crease it. Space holds. F turns over, Q and E rotate. K folds with the keyboard.',
 } as const;
 
 /** One short line per kernel reason code: what happened, then what to try. */
@@ -122,6 +132,7 @@ export const reasonHints: Record<ReasonCode, string> = {
   blocked: "Something's in the way.",
   held: 'That would tear the paper.',
   'too-thick': 'Too thick to crease here.',
+  unchanged: 'Already creased there.',
   tear: 'That would tear the paper.',
   unsupported: "That fold isn't possible here yet.",
   internal: "Something's in the way.",

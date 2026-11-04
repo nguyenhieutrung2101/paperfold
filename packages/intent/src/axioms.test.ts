@@ -8,10 +8,7 @@ import {
   axiom5,
   axiom7,
   candidateMoves,
-  classifyStroke,
-  foldedEdges,
   orderCandidates,
-  precreaseLines,
   snapContext,
   snapFold,
 } from './index.ts';
@@ -91,49 +88,34 @@ describe('snapping', () => {
 
 describe('candidates', () => {
   const opts = { line: lineThrough([0, 0], [0, 1]), seed: [10, 0] as Vec2, layersAtSeed: 3 };
+  const kinds = <T extends { candidate: { kind: string; layers: number } }>(xs: T[]) => xs.map((x) => `${x.candidate.kind}:${x.candidate.layers}`);
 
   it('lists top, k and all layers, and both reverse folds', () => {
     expect(candidateMoves(opts).map((c) => c.kind)).toEqual(['fold-top', 'fold-layers', 'fold-all', 'inside-reverse', 'outside-reverse']);
   });
 
-  it('on a closed flap, reverse folds come first; otherwise the top layer', () => {
+  it('a pick-up folds the layers you picked first, then more, then fewer; reverse folds last', () => {
     const all = candidateMoves(opts).map((candidate) => ({ candidate, ok: true }));
-    expect(orderCandidates(all, { allLayers: false }).map((x) => x.candidate.kind)[0]).toBe('inside-reverse');
-    const plain = all.map((x) => ({ ...x, ok: !x.candidate.kind.includes('reverse') }));
-    expect(orderCandidates(plain, { allLayers: false })[0]!.candidate.kind).toBe('fold-top');
-    expect(orderCandidates(plain, { allLayers: true })[0]!.candidate.kind).toBe('fold-all');
+    expect(kinds(orderCandidates(all, { allLayers: false }))).toEqual(['fold-top:1', 'fold-layers:2', 'fold-all:3', 'inside-reverse:3', 'outside-reverse:3']);
+    expect(kinds(orderCandidates(all, { allLayers: false, layers: 2 })).slice(0, 3)).toEqual(['fold-layers:2', 'fold-all:3', 'fold-top:1']);
+    expect(orderCandidates(all, { allLayers: true })[0]!.candidate.kind).toBe('fold-all');
+  });
+
+  it('a push leads with its reverse fold, then every layer', () => {
+    const all = candidateMoves(opts).map((candidate) => ({ candidate, ok: true }));
+    const order = orderCandidates(all, { allLayers: false, lead: ['outside-reverse', 'fold-all'] });
+    expect(kinds(order).slice(0, 2)).toEqual(['outside-reverse:3', 'fold-all:3']);
+  });
+
+  it('what you picked last time leads when it is valid', () => {
+    const all = candidateMoves(opts).map((candidate) => ({ candidate, ok: candidate.kind !== 'fold-top' }));
+    expect(orderCandidates(all, { allLayers: false, preferred: 'inside-reverse' })[0]!.candidate.kind).toBe('inside-reverse');
+    // The top layer alone is invalid here (joined): the next plain fold leads.
+    expect(orderCandidates(all, { allLayers: false })[0]!.candidate.kind).toBe('fold-layers');
   });
 
   it('keeps the first one when nothing is valid, so its refusal can be shown', () => {
     const none = candidateMoves(opts).map((candidate) => ({ candidate, ok: false }));
     expect(orderCandidates(none, { allLayers: false })).toHaveLength(1);
-  });
-});
-
-describe('crease or grab', () => {
-  // Book fold (spine at x = 0), creased? no: soft. Then precrease across it at y = 20.
-  const base = createSheet({ sizeMm: 100 });
-  const r1 = fold(base, { line: { p: [0, 0], d: [0, 1] }, seed: [25, 0], layers: 'all', direction: 'valley' });
-  if (!r1.ok) throw new Error('fold');
-  const r2 = fold(r1.state, { line: { p: [0, 20], d: [1, 0] }, seed: [-25, 40], layers: 'all', direction: 'valley' });
-  if (!r2.ok) throw new Error('fold 2');
-  const r3 = fold(r2.state, { line: { p: [0, 20], d: [1, 0] }, seed: [-25, 5], layers: 2, direction: 'valley' });
-  if (!r3.ok) throw new Error(`unfold ${r3.reason}`);
-  const snap = snapshot(r3.state);
-  const ctx = { edges: foldedEdges(snap), precreases: precreaseLines(snap) };
-  const opts = { decideMm: 2, nearMm: 3 };
-
-  it('waits for enough motion', () => {
-    expect(classifyStroke([0, -20], [0, -19], ctx, opts).kind).toBe('pending');
-  });
-  it('along a fold creases it', () => {
-    expect(classifyStroke([0.5, -20], [0.5, -10], ctx, opts).kind).toBe('crease');
-  });
-  it('across a fold away from a precrease grabs', () => {
-    expect(classifyStroke([-0.5, -20], [-15, -20], ctx, opts).kind).toBe('grab');
-  });
-  it('pushing into the paper by a precrease is a push', () => {
-    const s = classifyStroke([-0.2, 22], [-10, 22], ctx, opts);
-    expect(s.kind).toBe('push');
   });
 });

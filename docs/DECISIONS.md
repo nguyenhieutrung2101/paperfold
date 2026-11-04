@@ -211,14 +211,14 @@ The skin draws the after-state at θ = min(acos(x/x₀), π − tilt(speed)). **
 the shown candidate: Tab would then stall on a round trip, and the chip couldn't know which
 alternatives exist.
 
-## ADR-029 · Candidate order and Tab
+## ADR-029 · Candidate order and Tab (superseded by ADR-037)
 
 **Chose**: on a closed flap where a reverse fold is valid, a swing of the tip means [inside reverse,
 outside reverse, all layers, top layer, k layers]. Otherwise top layer first, or all layers with Shift.
 Invalid candidates drop out; if none is valid, the first stays so its refusal can be shown and
 explained. The last kind picked leads the next time it is valid.
 
-## ADR-030 · Gestures: the first 8 px decide
+## ADR-030 · Gestures: the first 8 px decide (refined by ADR-037)
 
 **Chose** to read a stroke's first 8 px. Along a folded edge (within 10 px of it) → crease stroke:
 sharpness only where the finger passes. Across a folded edge inward near a precrease → push: an
@@ -274,3 +274,49 @@ Phase 1 item not delivered.**
 **Chose** to expose `window.__paperfold` (kernel client, store, `toScreen` and `toPlane`) in development
 builds only (`import.meta.env.DEV`), so Playwright tests aim at real landmarks in millimetres instead of
 hard-coded pixels. Production builds don't include it.
+
+---
+
+Phase 1 polish
+
+## ADR-037 · Where you press says what you mean
+
+**Problem.** A mouse can't feel how many layers it's holding or whether it's pinching a corner or
+pushing an edge. Guessing from the drag alone misread common moves: a closed flap's corner led with
+"inside reverse fold", and dragging one end of a folded edge onto the other (the classic second fold)
+was read as a crease stroke.
+
+**Chose** press zones (`intent/surface.ts`):
+
+- **Corners**, found from the visible paper's outline (silhouette corners and the corners of flaps
+  lying on top, never where an unfolded crease meets an edge), always win: a press there is a pinch.
+- **Visible folded edges** are next: along one creases it, across it pushes (inside reverse fold) or
+  pulls (outside). A crease stroke that strays more than about 15 px off its edge becomes a push or
+  pull, because an outside reverse fold's pull starts almost along the edge.
+- **Everywhere else on the paper** is a pick-up.
+
+A pick-up leads with a plain fold of the layers you picked (then more, then fewer; reverse folds
+last). A push leads with its reverse fold, then every layer. **Deviation from the brief:** its fixed
+Tab order (inside, outside, both, top) becomes the order *after* the zone's first guess.
+
+**Pushes need no precrease.** The pressed point of the edge goes where the pointer is, so the line
+is the one taking one to the other (snapped like any fold, without moving the pressed point to a
+landmark). Beside a precrease, the push follows the precrease and only its depth matters (the old
+behavior).
+
+## ADR-038 · See it before you press, change it while you hold
+
+- **Hover:** a corner's layers curl up about 50°. That's a real kernel fold of the corner shown
+  part-way, so a corner that can't move alone (joined) visibly takes the layers it must. A badge says
+  "Top layer", "2 layers" or "Both layers". A folded edge glows and says "Push in: tuck the tip
+  inside". The badge and the strip sit on the side of the pointer away from the model.
+- **While the button is down, the scroll wheel picks:** before moving, how many layers; during the
+  drag, which of the valid folds. It never zooms then; otherwise it zooms as before. Tab, Shift+Tab
+  and 1–9 do the same. On touch a second finger taps the strip. A pen's barrel button steps forward.
+- **The strip:** up to nine small pictures of the valid folds, the shown one highlighted, its name
+  underneath.
+- **Memory:** the choice made for a kind of press (corner, folded edge, paper) leads next time it's
+  valid.
+- **Kernel:** a crease that changes nothing is refused (`unchanged`), so it can't add an empty
+  timeline step. Recognition calls any sharpening a crease, not just one that raises the fold's
+  sharpest point.

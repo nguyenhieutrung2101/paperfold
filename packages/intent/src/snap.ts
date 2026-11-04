@@ -34,6 +34,11 @@ export interface SnapOptions {
   readonly radiusMm: number;
   /** Ctrl/Cmd held: no snapping. */
   readonly freehand: boolean;
+  /**
+   * Snap the grabbed point to a nearby landmark first (default true). A push on a folded edge
+   * keeps the exact point pressed: it says where along the edge the paper gives.
+   */
+  readonly snapGrab?: boolean;
 }
 
 /** Simplest first (brief: prefer the simplest axiom). */
@@ -66,7 +71,7 @@ function nearestPoint(points: readonly SnapPoint[], p: Vec2, radius: number): Sn
  */
 export function snapFold(from: Vec2, to: Vec2, ctx: SnapContext, opts: SnapOptions): SnappedFold | null {
   const r = opts.radiusMm;
-  const grabMark = opts.freehand ? null : nearestPoint(ctx.points, from, r);
+  const grabMark = opts.freehand || opts.snapGrab === false ? null : nearestPoint(ctx.points, from, r);
   const g = grabMark?.point ?? from;
   if (dist(g, to) < Math.max(1e-3, r / 4)) return null;
   const raw = perpendicularBisector(g, to);

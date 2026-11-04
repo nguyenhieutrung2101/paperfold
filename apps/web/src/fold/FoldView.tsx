@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei';
+import { Line, OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import { FoldLine, GhostOutline, SnapRing, Studio } from '@paperfold/render';
 import { useCallback, useMemo, useRef } from 'react';
@@ -39,6 +39,30 @@ function Ghost({ heightRef }: { readonly heightRef: React.RefObject<number> }) {
       ))}
     </>
   );
+}
+
+/** Before you press: a ring on the corner you'd pinch, or a glow along the edge you'd push. */
+function HoverMarks({ heightRef }: { readonly heightRef: React.RefObject<number> }) {
+  const hover = useStore((s) => s.hover);
+  const drag = useStore((s) => s.drag);
+  const dark = useStore((s) => s.theme === 'dark');
+  if (!hover || drag) return null;
+  const color = dark ? '#8fc3ff' : '#1f5fae';
+  const y = (heightRef.current ?? 0) + 0.6;
+  if (hover.zone === 'corner' && hover.corner) {
+    return <SnapRing at={hover.corner} height={y} radius={hover.pressed ? 3 : 4} color={color} />;
+  }
+  if (hover.zone === 'folded-edge' && hover.edge) {
+    const a: [number, number, number] = [hover.edge.a[0], y, -hover.edge.a[1]];
+    const b: [number, number, number] = [hover.edge.b[0], y, -hover.edge.b[1]];
+    return (
+      <>
+        <Line points={[a, b]} color={color} lineWidth={9} transparent opacity={0.28} />
+        <Line points={[a, b]} color={color} lineWidth={2.5} />
+      </>
+    );
+  }
+  return null;
 }
 
 /** Fingertips holding the paper down: a soft shadow where each one presses. */
@@ -97,6 +121,7 @@ export function FoldView() {
       <Studio dark={dark} shadows={SHADOWS} />
       <PaperModel onTopHeight={onTopHeight} />
       <Ghost heightRef={topHeight} />
+      <HoverMarks heightRef={topHeight} />
       <Holds heightRef={topHeight} />
       <KeyboardMarks heightRef={topHeight} />
       <FoldInput topHeight={topHeight} />

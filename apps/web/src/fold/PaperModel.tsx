@@ -4,13 +4,15 @@ import { buildFrame, type SkinFrame, skinParamsFor } from '@paperfold/skin';
 import { useMemo, useRef, useState } from 'react';
 import { type Group, Matrix4, Vector3 } from 'three';
 import { PRESETS } from '../presets.ts';
-import { useStore } from '../store.ts';
+import { type PeekView, useStore } from '../store.ts';
 import { foldPose, reducedMotion } from './motion.ts';
 
 /** The angle the live drag was showing, so a committed fold lands from there. */
 export let dragTheta = 0;
 
 const TURN_MS = 620;
+/** How far a hovered corner curls up (radians). */
+const PEEK_THETA = 0.85;
 const ROTATE_MS = 360;
 
 /**
@@ -34,10 +36,13 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
   const [moving, setMoving] = useState<{ key: string; frame: SkinFrame } | null>(null);
   const settledKey = useRef<string>('');
   const shownTheta = useRef(0);
+  // The hover curl: which peek is showing and how far it's open.
+  const shownPeek = useRef<PeekView | null>(null);
+  const peekTheta = useRef(0);
 
   useFrame((_, dt) => {
     const now = performance.now();
-    const { drag, creaseOverlay } = useStore.getState();
+    const { drag, creaseOverlay, peek } = useStore.getState();
     // The live drag: the kernel-validated candidate, at the angle the pointer asks for. The
     // paper eases toward it (it never jumps), and trembles a little while it resists.
     if (snap && params && drag?.preview) {
@@ -57,6 +62,28 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
       return;
     }
     if (!drag) shownTheta.current = 0;
+    // Hovering a corner: the layers you'd pick up curl up a little (about 50°), and settle back
+    // when you move away. A real, validated fold of that corner, shown part-way.
+    if (drag?.preview) {
+      shownPeek.current = null;
+      peekTheta.current = 0;
+    } else if (snap && params && (peek || shownPeek.current)) {
+      if (peek && shownPeek.current?.key !== peek.key) {
+        shownPeek.current = peek;
+        peekTheta.current = 0;
+      }
+      const target = peek ? PEEK_THETA : 0;
+      peekTheta.current = reducedMotion() ? target : peekTheta.current + (target - peekTheta.current) * Math.min(1, dt * 12);
+      const sp = shownPeek.current;
+      if (!peek && peekTheta.current < 0.01) {
+        shownPeek.current = null;
+      } else if (sp) {
+        const frame = buildFrame(sp.after, params, { before: snap, transition: sp.transition, theta: peekTheta.current, sharpnessAt: () => 0 });
+        setMoving({ key: 'peek', frame });
+        settledKey.current = '';
+        return;
+      }
+    }
     if (snap && params && active) {
       const pose = foldPose(active, snap, now, paperMode, creaseOverlay);
       const key = `${active.key}:${snap.hash}:${paperMode}`;

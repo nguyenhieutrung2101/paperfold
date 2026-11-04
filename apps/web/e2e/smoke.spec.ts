@@ -53,13 +53,13 @@ test('fold a corner to a corner, crease it, undo and redo', async ({ page }) => 
   await expect(page.locator('.step[aria-current="step"]')).toHaveText('2');
 });
 
-test('a top layer joined at the spine: the chip offers both layers', async ({ page }) => {
+test('a top layer joined at the spine: the strip offers both layers', async ({ page }) => {
   // Book fold: right edge over to the left edge.
   await dragMm(page, [75, 0], [-75, 0]);
   await expect(steps(page)).toHaveCount(2);
   // Grab near the spine, where the top layer is joined to the one under it.
   await dragMm(page, [-15, 3], [-50, 3], async () => {
-    await expect(page.locator('.chip')).toContainText('Fold both layers');
+    await expect(page.locator('.strip')).toContainText('Fold both layers');
   });
   await expect(steps(page)).toHaveCount(3);
 });
@@ -79,33 +79,78 @@ test('the paper resists a held fold, and explains on the second try', async ({ p
   await page.keyboard.up(' ');
 });
 
-test('inside reverse fold: named while dragging, Tab tries another way, steps replay it', async ({ page }) => {
-  // Diagonal fold, creased: a two-layer triangle whose spine runs corner to corner.
+/** Diagonal fold, creased: a two-layer triangle whose spine runs from (-75, -75) to (75, 75). */
+async function triangle(page: Page) {
   await dragMm(page, [75, -75], [-75, 75]);
   await expect(steps(page)).toHaveCount(2);
   await page.keyboard.press('c');
   await expect(steps(page)).toHaveCount(3);
+}
 
-  // Push the tip at (75, 75) in between the layers.
-  const chip = page.locator('.chip');
-  await dragMm(page, [66, 73], [40, 68], async () => {
-    await expect(chip).toContainText('Inside reverse fold');
-    await page.keyboard.press('Tab');
-    await expect(chip).toContainText('Fold both layers');
-    await page.keyboard.press('Tab');
-    await expect(chip).toContainText('Inside reverse fold');
+const lastStep = (page: Page) => page.locator('.steps li button').last();
+
+test('a corner on the folded edge folds over; it does not crease', async ({ page }) => {
+  await triangle(page);
+  // One end of the spine onto the other: fold the triangle in half.
+  await dragMm(page, [-74, -74.5], [74, 74]);
+  await expect(steps(page)).toHaveCount(4);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Valley fold');
+});
+
+test('hover shows what you would pick up; scroll while pressing takes more layers', async ({ page }) => {
+  await triangle(page);
+  // The open corner: two loose layers.
+  const c = await screen(page, [-73.5, 73.5]);
+  await page.mouse.move(c[0], c[1], { steps: 4 });
+  const badge = page.locator('.hover-badge');
+  await expect(badge).toContainText('Top layer');
+  await page.mouse.down();
+  await page.mouse.wheel(0, 120);
+  await expect(badge).toContainText('Both layers');
+  const to = await screen(page, [-40, 40]);
+  for (let i = 1; i <= 12; i++) await page.mouse.move(c[0] + ((to[0] - c[0]) * i) / 12, c[1] + ((to[1] - c[1]) * i) / 12);
+  await expect(page.locator('.strip')).toContainText('Fold both layers');
+  await page.mouse.up();
+  await expect(steps(page)).toHaveCount(4);
+});
+
+test('push a folded edge in: an inside reverse fold, no precrease; 1–2 switch; steps replay it', async ({ page }) => {
+  await triangle(page);
+  // Hovering the folded edge says what it does.
+  const e = await screen(page, [0.6, -0.6]);
+  await page.mouse.move(e[0], e[1], { steps: 4 });
+  await expect(page.locator('.hover-badge')).toContainText('Push in: tuck the tip inside');
+
+  // The spine point (55, 55) goes to (35, 65): the line through (30, 30) along (1, 2).
+  const strip = page.locator('.strip');
+  await dragMm(page, [55.4, 54.6], [35, 65], async () => {
+    await expect(strip).toContainText('Inside reverse fold');
+    await page.keyboard.press('2');
+    await expect(strip).toContainText('Fold both layers');
+    await page.keyboard.press('1');
+    await expect(strip).toContainText('Inside reverse fold');
   });
   await expect(steps(page)).toHaveCount(4);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Inside reverse fold');
 
   await page.getByRole('tab', { name: 'Steps' }).click();
   const list = page.getByRole('complementary', { name: 'All steps as text' });
   await expect(list.getByText('2 steps.', { exact: false })).toBeVisible();
   await expect(list.getByText('Push the tip inside.')).toBeVisible();
   await expect(page.locator('.warn')).toHaveCount(0);
-
   await list.getByText('Push the tip inside.').click();
   await expect(page.locator('.steps-bar')).toContainText('Inside reverse fold');
   await expect(page.locator('.steps-bar')).toContainText('Step 2 of 2');
+});
+
+test('pull a folded edge out: an outside reverse fold', async ({ page }) => {
+  await triangle(page);
+  // The spine point (55, 55) goes outside, to (15.04, -2.04): the tip wraps around the outside.
+  await dragMm(page, [55.4, 54.6], [15.04, -2.04], async () => {
+    await expect(page.locator('.strip')).toContainText('Outside reverse fold');
+  });
+  await expect(steps(page)).toHaveCount(4);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Outside reverse fold');
 });
 
 test('fold with the keyboard', async ({ page }) => {

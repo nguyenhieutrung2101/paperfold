@@ -3,13 +3,16 @@
  * what you meant; the kernel decides what's possible.
  *
  * - snap.ts: point-to-point folding snapped by the Huzita–Justin axioms 1–5 and 7.
- * - candidates.ts: every move one drag could mean, and their order (Tab cycles).
- * - gestures.ts: crease strokes vs grabs, and pushing a spine in along a precrease.
+ * - surface.ts: the model seen from above (what's on top, corners you can pinch) and where a
+ *   press lands: a corner, a folded edge or the paper.
+ * - gestures.ts: what a stroke means from where it starts; pushing a folded edge.
+ * - candidates.ts: every move one drag could mean, and their order (scroll, Tab, 1–4).
  */
 export * from './axioms.ts';
 export * from './snap.ts';
 export * from './candidates.ts';
 export * from './gestures.ts';
+export * from './surface.ts';
 import type { SnapContext } from './snap.ts';
 import {
   applyPlaneIso,

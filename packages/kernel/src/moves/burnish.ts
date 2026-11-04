@@ -70,7 +70,10 @@ export function burnish(state: KernelState, params: BurnishParams): MoveResult {
   }
 
   if (touched.length === 0) return reject('missed', [], { detail: 'No folded edge along that line' });
-  if (capped && touched.every((e) => creases.get(e) === state.cp.creases.get(e))) return reject('too-thick');
+  const nothingChanged = touched.every((e) => creases.get(e) === state.cp.creases.get(e));
+  if (capped && nothingChanged) return reject('too-thick');
+  // Already that sharp: not a move (it would only add an empty step to the history).
+  if (nothingChanged) return reject('unchanged', [], { detail: 'Already creased there' });
 
   return {
     ok: true,

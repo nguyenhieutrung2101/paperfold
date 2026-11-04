@@ -1,12 +1,19 @@
 import {
+  type CandidateKind,
   classifyStroke,
   type FoldedEdge,
   foldedEdges,
   precreaseLines,
+  type PressZone,
+  type PushFold,
+  pushFold,
   type SnapContext,
   snapContext,
   type SnapPoint,
   snapFold,
+  type Surface,
+  surfaceOf,
+  zoneAt,
 } from '@paperfold/intent';
 import { type Line2, perpendicularBisector, signedDistance, type Snapshot, type Vec2 } from '@paperfold/kernel';
 import { useThree } from '@react-three/fiber';
@@ -25,6 +32,12 @@ const SNAP_PX = 16;
 const SNAP_TOUCH_PX = 26;
 const DECIDE_PX = 8;
 const NEAR_EDGE_PX = 10;
+/** A crease stroke that strays this far from its edge becomes a push or a pull. */
+const LEAVE_EDGE_PX = 15;
+/** A press this close to a corner pinches the corner, even on a folded edge. */
+const CORNER_PX = 14;
+/** Scroll distance per step through the alternatives (a mouse notch is about 100). */
+const WHEEL_STEP = 60;
 const GRAB_MARGIN_PX = 6;
 
 interface Gesture {
@@ -33,7 +46,15 @@ interface Gesture {
   /** The press point on the paper (table plane). */
   readonly start: Vec2;
   readonly startedAt: number;
+  /** Where the press landed: what it can mean depends on it. */
+  readonly zone: PressZone;
   stage: 'pending' | 'grab' | 'crease' | 'push';
+  /** Layers picked up (the hover's, changed by scrolling before moving). */
+  layers: number;
+  /** The user stepped through the alternatives (remember what they chose). */
+  chose: boolean;
+  /** Pen barrel button down last time we looked. */
+  barrel: boolean;
   pointer: Vec2;
   screen: { x: number; y: number };
   shift: boolean;
@@ -57,21 +78,27 @@ interface Gesture {
   hi: number;
   value: number;
   // Push
-  push: { line: Line2; seed: Vec2; edge: FoldedEdge } | null;
+  pushEdge: FoldedEdge | null;
+  push: PushFold | null;
 }
 
 /**
- * Pointer input for folding (brief, section 5). Input never moves the paper: intent proposes
- * candidates, the kernel validates them in the worker, the skin shows the chosen one live
- * under the pointer, and letting go commits it.
+ * Pointer input for folding (brief, section 5; Phase 1 polish, plan 1). Input never moves the
+ * paper: intent proposes candidates, the kernel validates them in the worker, the skin shows the
+ * chosen one live under the pointer, and letting go commits it.
  *
- * - Press on the paper; the first few millimetres decide: along a fold creases it, pushing a
- *   folded edge in beside a precrease makes an inside reverse fold, anything else grabs.
- * - Grab: the point-to-point fold line snaps (Huzita–Justin), the flap lifts and follows the
- *   pointer, tilting more when you move fast. Shift takes every layer; Tab cycles the other
- *   ways to read the drag; Ctrl/Cmd is freehand; Esc cancels.
- * - Impossible: the paper resists (rubber band and a slight tremble), the blocking layer
- *   glows, and on a second try one hint appears by the pointer.
+ * - Hover shows what a press would pick up: a corner's layers curl up a little (a real,
+ *   validated fold shown part-way) with a badge; a folded edge glows and says it can be pushed.
+ * - Where you press decides the kind of move. A corner (always, even on a folded edge) or the
+ *   paper: pick it up and fold it over, point to point, snapped by Huzita–Justin. A folded
+ *   edge: along it creases; across it pushes (inside reverse fold) or pulls (outside); a crease
+ *   stroke that strays off the edge becomes a push or pull.
+ * - While the button is down, scroll (or Tab, 1–9, a tap on the strip, a pen's barrel) steps
+ *   through what else the press or drag could mean: before moving, how many layers; during the
+ *   drag, every valid fold. The last choice per kind of press leads next time.
+ * - Shift takes every layer; Ctrl/Cmd is freehand; Esc cancels.
+ * - Impossible: the paper resists (rubber band and a slight tremble), the blocking layer glows,
+ *   and on a second try one hint appears by the pointer.
  * - With Space down, a press that doesn't move pins the paper (a press that moves still folds,
  *   around the pins); on touch, a resting finger holds. Letting go of Space lifts the pins.
  * - K folds with the keyboard: pick a landmark, pick a target, Enter.
@@ -111,13 +138,37 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
 
     // What snapping and gestures need from the current state, computed once per snapshot.
     let cachedFor: Snapshot | null = null;
-    let cache: { ctx: SnapContext; edges: FoldedEdge[]; precreases: Line2[] } | null = null;
+    let cache: { ctx: SnapContext; edges: FoldedEdge[]; precreases: Line2[]; surface: Surface } | null = null;
     const contextFor = (snap: Snapshot) => {
       if (snap !== cachedFor || !cache) {
         cachedFor = snap;
-        cache = { ctx: snapContext(snap), edges: foldedEdges(snap), precreases: precreaseLines(snap) };
+        cache = { ctx: snapContext(snap), edges: foldedEdges(snap), precreases: precreaseLines(snap), surface: surfaceOf(snap) };
       }
       return cache;
+    };
+    const zoneOf = (snap: Snapshot, p: Vec2): PressZone => {
+      const c = contextFor(snap);
+      const px = mmPerPx();
+      return zoneAt(p, c.surface, c.edges, { cornerMm: CORNER_PX * px, nearMm: NEAR_EDGE_PX * px });
+    };
+    const zoneKind = (z: PressZone) => z.kind;
+    /** Screen direction from the model's middle to (x, y): labels go that way, off the paper. */
+    const awayFrom = (x: number, y: number) => {
+      const snap = st().view?.snapshot;
+      const corners = snap ? contextFor(snap).surface.corners : [];
+      if (corners.length === 0) return { x: 0.7, y: 0.7 };
+      let cx = 0;
+      let cy = 0;
+      for (const c of corners) {
+        cx += c[0] / corners.length;
+        cy += c[1] / corners.length;
+      }
+      const r = el.getBoundingClientRect();
+      const v = new Vector3(cx, topHeight.current ?? 0, -cy).project(camera);
+      const dx = x - (r.left + ((v.x + 1) / 2) * r.width);
+      const dy = y - (r.top + ((1 - v.y) / 2) * r.height);
+      const l = Math.hypot(dx, dy);
+      return l < 1 ? { x: 0.7, y: 0.7 } : { x: dx / l, y: dy / l };
     };
 
     let g: Gesture | null = null;
@@ -158,19 +209,31 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
 
     const queryFor = (gg: Gesture): DragQuery | null => {
       const holds = [...st().holds, ...touchHolds.values()];
+      const preferred = st().preferredByZone[zoneKind(gg.zone)];
       if (gg.stage === 'push' && gg.push) {
-        return { line: gg.push.line, seed: gg.push.seed, holds, allLayers: true, index: 0, only: ['inside-reverse'] };
+        // A push leads with its reverse fold (inside when pushed in, outside when pulled
+        // out), then folding every layer along the same line.
+        const lead: CandidateKind[] = [gg.push.kind === 'inside' ? 'inside-reverse' : 'outside-reverse', 'fold-all'];
+        return { line: gg.push.line, seed: gg.push.seed, holds, allLayers: true, index: gg.tab, lead, ...(preferred ? { preferred } : {}) };
       }
       if (!gg.line) return null;
-      const preferred = st().preferred;
       return {
         line: { p: gg.line.p, d: gg.line.d },
         seed: gg.start,
         holds,
         allLayers: gg.shift,
         index: gg.tab,
+        layers: gg.layers,
         ...(preferred ? { preferred } : {}),
       };
+    };
+    /** Step to another alternative (scroll, Tab, 1–4, the strip, the pen's barrel). */
+    const choose = (index: number) => {
+      if (!g || (g.stage !== 'grab' && g.stage !== 'push')) return;
+      g.tab = index;
+      g.chose = true;
+      const q = queryFor(g);
+      if (q) void runExplore(q);
     };
 
     /** Push the gesture's state to the store for the paper, the ghost and the chip. */
@@ -179,6 +242,9 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       const r = g.result;
       const resisting = r !== null && r.preview === null;
       st().set({
+        choose: (i: number) => choose(i),
+        hover: null,
+        peek: null,
         drag: {
           preview: r?.preview ?? (resisting ? g.lastValid : null),
           theta: g.theta,
@@ -188,6 +254,7 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
           line: g.stage === 'push' ? (g.push?.line ?? null) : g.line,
           marks: g.marks,
           pointer: g.screen,
+          away: awayFrom(g.screen.x, g.screen.y),
         },
       });
     };
@@ -196,7 +263,7 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       g = null;
       pending = null;
       el.style.cursor = '';
-      st().set({ drag: null, creaseOverlay: null, glow: new Set() });
+      st().set({ drag: null, creaseOverlay: null, glow: new Set(), choose: null, peek: null });
     };
 
     // ---- pointer handlers ----
@@ -224,11 +291,20 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       if (g) return;
       el.setPointerCapture(ev.pointerId);
       const now = performance.now();
+      const zone = zoneOf(snap, p);
+      // Pick up what the hover showed (the corner curl's layers), unless it was elsewhere.
+      const hv = s.hover;
+      const layers = hv && hv.zone === zone.kind ? hv.layers : 1;
+      if (hv) s.set({ hover: { ...hv, pressed: true } });
       g = {
         pointerId: ev.pointerId,
         pointerType: ev.pointerType,
         start: p,
         startedAt: now,
+        zone,
+        layers,
+        chose: false,
+        barrel: false,
         stage: 'pending',
         pointer: p,
         screen: { x: ev.clientX, y: ev.clientY },
@@ -248,9 +324,10 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
         lo: 0,
         hi: 0,
         value: 0,
+        pushEdge: null,
         push: null,
       };
-      el.style.cursor = 'grabbing';
+      el.style.cursor = zone.kind === 'folded-edge' ? 'pointer' : 'grabbing';
     };
 
     const onMove = (ev: PointerEvent) => {
@@ -271,25 +348,45 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       g.screen = { x: ev.clientX, y: ev.clientY };
       g.shift = ev.shiftKey;
       g.freehand = ev.ctrlKey || ev.metaKey;
-      const { ctx, edges, precreases } = contextFor(snap);
+      // A pen's barrel button steps to the next alternative.
+      if (ev.pointerType === 'pen') {
+        const barrel = (ev.buttons & 2) !== 0;
+        if (barrel && !g.barrel) choose(g.tab + 1);
+        g.barrel = barrel;
+      }
+      const { ctx, precreases } = contextFor(snap);
       const px = mmPerPx();
+      const snapRadius = (g.pointerType === 'touch' ? SNAP_TOUCH_PX : SNAP_PX) * px;
 
       if (g.stage === 'pending') {
-        const intent = classifyStroke(g.start, p, { edges, precreases }, { decideMm: DECIDE_PX * px, nearMm: NEAR_EDGE_PX * px });
+        // Where the press landed decides: corners and the paper are picked up; on a folded
+        // edge, along it creases and across it pushes.
+        const intent = classifyStroke(g.start, p, g.zone, { decideMm: DECIDE_PX * px });
         if (intent.kind === 'pending') return;
+        s.set({ hover: null });
         if (intent.kind === 'crease') {
           g.stage = 'crease';
           g.edge = intent.edge;
           const u0 = along(intent.edge.line, g.start);
           g.lo = u0;
           g.hi = u0;
+          s.set({ peek: null });
         } else if (intent.kind === 'push') {
           g.stage = 'push';
-          g.push = { line: intent.line, seed: intent.seed, edge: intent.edge };
-          const q = queryFor(g);
-          if (q) void runExplore(q);
+          g.pushEdge = intent.edge;
         } else {
           g.stage = 'grab';
+        }
+      }
+
+      // A crease stroke runs along the edge. One that leaves it (well off to either side) is a
+      // push or a pull: pulling the tip around the outside starts almost along the edge.
+      if (g.stage === 'crease' && g.edge) {
+        const off = (p[0] - g.edge.a[0]) * g.edge.inward[0] + (p[1] - g.edge.a[1]) * g.edge.inward[1];
+        if (Math.abs(off) > LEAVE_EDGE_PX * px) {
+          g.stage = 'push';
+          g.pushEdge = g.edge;
+          s.set({ creaseOverlay: null });
         }
       }
 
@@ -305,15 +402,28 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
         return;
       }
 
-      if (g.stage === 'push' && g.push) {
-        const depth = (p[0] - g.start[0]) * g.push.edge.inward[0] + (p[1] - g.start[1]) * g.push.edge.inward[1];
-        g.theta = Math.max(0, Math.min(1, depth / 12)) * Math.PI;
+      if (g.stage === 'push' && g.pushEdge) {
+        // The pressed point of the edge goes where the pointer is (or, beside a precrease,
+        // the push follows it): a reverse fold, inside when pushed in, outside when pulled out.
+        const pf = pushFold(g.start, p, g.pushEdge, { snap: ctx, precreases }, { radiusMm: snapRadius, nearMm: NEAR_EDGE_PX * px, freehand: g.freehand });
+        if (!pf) {
+          g.push = null;
+          s.set({ drag: null });
+          return;
+        }
+        g.push = pf;
+        g.marks = pf.marks;
+        const tilt = 0.06 + 0.5 * Math.min(1, g.speed / 260);
+        g.geo = pf.theta;
+        g.theta = pf.precrease ? pf.theta : Math.min(pf.theta, Math.PI - tilt);
+        const q = queryFor(g);
+        if (q) void runExplore(q);
         publish();
         return;
       }
 
       if (g.stage === 'grab') {
-        const snapped = snapFold(g.start, p, ctx, { radiusMm: (g.pointerType === 'touch' ? SNAP_TOUCH_PX : SNAP_PX) * px, freehand: g.freehand });
+        const snapped = snapFold(g.start, p, ctx, { radiusMm: snapRadius, freehand: g.freehand });
         if (!snapped) {
           g.line = null;
           s.set({ drag: null });
@@ -360,6 +470,8 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       }
       if (gg.stage === 'pending') {
         cancel();
+        const hv = st().hover;
+        if (hv) st().set({ hover: { ...hv, pressed: false } });
         // The second hand: with Space down, a press that doesn't move pins the paper there.
         // A press that moves folds as usual, around the pins (one hand holds, the other folds).
         if (holdKey) {
@@ -373,11 +485,15 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       const r = await latest;
       const result = gg.result ?? r;
       g = null;
-      const turned = gg.stage === 'push' ? gg.theta > Math.PI * 0.45 : gg.geo > Math.PI / 2;
+      const turned = gg.stage === 'push' && gg.push?.precrease ? gg.theta > Math.PI * 0.45 : gg.geo > Math.PI / 2;
+      st().set({ choose: null });
       if (result?.preview && turned) {
         const kind = result.candidates[result.selected]?.kind;
-        if (gg.tab > 0 && kind) st().set({ preferred: kind });
-        await commitMove(result.preview.move, at, { grab: gg.start, holds }, dragTheta);
+        // Remember what was chosen for this kind of press: it leads next time.
+        if (gg.chose && kind) st().set({ preferredByZone: { ...st().preferredByZone, [zoneKind(gg.zone)]: kind } });
+        if (gg.stage === 'push') advanceFirstRun(4);
+        const grab = gg.stage === 'push' && gg.push ? gg.push.seed : gg.start;
+        await commitMove(result.preview.move, at, { grab, holds }, dragTheta);
         st().set({ drag: null });
       } else {
         st().set({ drag: null });
@@ -386,15 +502,115 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       }
     };
 
+    // ---- hover: show what you'd pick up before you press ----
+    let hoverKey = '';
+    let hoverLayers = 1;
+    let peekKey = '';
+    let peekSeq = 0;
+    const clearHover = () => {
+      hoverKey = '';
+      peekKey = '';
+      peekSeq++;
+      if (st().hover || st().peek) st().set({ hover: null, peek: null });
+    };
+    /** Ask the worker to lift this corner a little by the layers you'd take. Latest wins. */
+    const requestPeek = (corner: Vec2, layers: number) => {
+      const key = `${corner[0]},${corner[1]}:${layers}:${st().view?.snapshot.hash ?? ''}`;
+      if (key === peekKey) return;
+      peekKey = key;
+      const seq = ++peekSeq;
+      void kernel()
+        .peek({ corner, layers })
+        .then((r) => {
+          if (seq !== peekSeq) return;
+          const h = st().hover;
+          if (!h || h.zone !== 'corner') return;
+          hoverLayers = r.layers;
+          if (g && g.stage === 'pending') g.layers = r.layers;
+          st().set({
+            hover: { ...h, layers: r.layers, min: r.min, total: Math.max(1, r.total) },
+            peek: r.preview ? { key, after: r.preview.after, transition: r.preview.transition } : null,
+          });
+        });
+    };
     const hover = (ev: PointerEvent) => {
-      const snap = st().view?.snapshot;
-      const raw = snap ? toPlane(ev) : null;
-      const p = snap && raw ? grabPoint(snap, raw, GRAB_MARGIN_PX * mmPerPx()) : null;
-      el.style.cursor = p ? (holdKey ? 'crosshair' : 'grab') : '';
-      if (p && snap) {
-        const n = layersAt(snap, p);
-        el.title = n > 1 ? `${strings.layersBadge(n)} · ${ev.shiftKey ? strings.allLayers : strings.topLayer}` : '';
-      } else el.title = '';
+      const s = st();
+      const snap = s.view?.snapshot;
+      if (!snap || s.mode !== 'fold' || s.keyboard || s.drag) {
+        clearHover();
+        return;
+      }
+      const raw = toPlane(ev);
+      const p = raw && grabPoint(snap, raw, GRAB_MARGIN_PX * mmPerPx());
+      if (!p) {
+        el.style.cursor = '';
+        clearHover();
+        return;
+      }
+      const zone = zoneOf(snap, p);
+      el.style.cursor = holdKey ? 'crosshair' : zone.kind === 'folded-edge' ? 'pointer' : 'grab';
+      const key = zone.kind === 'corner' ? `c:${zone.point.join(',')}` : zone.kind === 'folded-edge' ? `e:${zone.edge.a.join(',')}:${zone.edge.b.join(',')}` : 'p';
+      if (key !== hoverKey) {
+        hoverKey = key;
+        hoverLayers = 1;
+      }
+      const screen = { x: ev.clientX, y: ev.clientY };
+      const away = awayFrom(screen.x, screen.y);
+      if (zone.kind === 'corner') {
+        const prev = s.hover;
+        const same = prev?.zone === 'corner' && prev.corner?.[0] === zone.point[0] && prev.corner?.[1] === zone.point[1];
+        s.set({
+          hover: {
+            zone: 'corner',
+            screen,
+            away,
+            layers: same ? prev!.layers : hoverLayers,
+            min: same ? prev!.min : 1,
+            total: same ? prev!.total : layersAt(snap, p),
+            corner: zone.point,
+            pressed: false,
+          },
+        });
+        requestPeek(zone.point, hoverLayers);
+        return;
+      }
+      peekKey = '';
+      peekSeq++;
+      const total = layersAt(snap, p);
+      s.set({
+        peek: null,
+        hover:
+          zone.kind === 'folded-edge'
+            ? { zone: 'folded-edge', screen, away, layers: total, min: total, total, edge: { a: zone.edge.a, b: zone.edge.b }, pressed: false }
+            : { zone: 'paper', screen, away, layers: Math.min(hoverLayers, Math.max(1, total)), min: 1, total, pressed: false },
+      });
+    };
+
+    // ---- scroll while the button is down: change your mind without letting go ----
+    let wheelAcc = 0;
+    const onWheel = (ev: WheelEvent) => {
+      if (!g) return; // not pressed: the camera zooms as usual
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      wheelAcc += ev.deltaY;
+      if (Math.abs(wheelAcc) < WHEEL_STEP) return;
+      const dir = wheelAcc > 0 ? 1 : -1;
+      wheelAcc = 0;
+      if (g.stage === 'pending') {
+        // Before moving: how many layers you take.
+        const snap = st().view?.snapshot;
+        if (!snap || g.zone.kind === 'folded-edge') return;
+        const h = st().hover;
+        const total = Math.max(1, h?.total ?? layersAt(snap, g.start));
+        const next = Math.max(h?.min ?? 1, Math.min(total, g.layers + dir));
+        if (next === g.layers) return;
+        g.layers = next;
+        hoverLayers = next;
+        if (h) st().set({ hover: { ...h, layers: next, pressed: true } });
+        if (g.zone.kind === 'corner') requestPeek(g.zone.point, next);
+        return;
+      }
+      if (g.stage === 'grab' || g.stage === 'push') choose(g.tab + dir);
     };
 
     // ---- keyboard ----
@@ -473,9 +689,12 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       }
       if (ev.key === 'Tab' && g && (g.stage === 'grab' || g.stage === 'push')) {
         ev.preventDefault();
-        g.tab += 1;
-        const q = queryFor(g);
-        if (q) void runExplore(q);
+        choose(g.tab + (ev.shiftKey ? -1 : 1));
+        return;
+      }
+      if (/^[1-9]$/.test(ev.key) && g && (g.stage === 'grab' || g.stage === 'push')) {
+        ev.preventDefault();
+        choose(Number(ev.key) - 1);
         return;
       }
       if (ev.key === 'Shift' && g && g.stage === 'grab') {
@@ -537,6 +756,9 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
     el.addEventListener('dblclick', onDouble);
+    // Capture on the window, so a scroll during a drag never reaches the camera controls.
+    window.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    el.addEventListener('pointerleave', clearHover);
     // Development only: table plane <-> screen, so e2e tests can aim at real landmarks.
     const dev = import.meta.env.DEV ? (window as unknown as { __paperfold?: Record<string, unknown> }).__paperfold : undefined;
     if (dev) {
@@ -559,6 +781,8 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
       el.removeEventListener('dblclick', onDouble);
+      window.removeEventListener('wheel', onWheel, { capture: true });
+      el.removeEventListener('pointerleave', clearHover);
     };
   }, [gl, camera, topHeight]);
 

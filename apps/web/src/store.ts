@@ -49,6 +49,8 @@ export interface DragView {
   readonly line: Line2 | null;
   readonly marks: readonly Vec2[];
   readonly pointer: { readonly x: number; readonly y: number };
+  /** Screen direction away from the model: the strip goes that side, off the paper. */
+  readonly away: { readonly x: number; readonly y: number };
 }
 
 /** A crease stroke in progress: sharpness along a fold line. */
@@ -57,6 +59,32 @@ export interface CreaseOverlay {
   readonly lo: number;
   readonly hi: number;
   readonly value: number;
+}
+
+export type ZoneKind = 'corner' | 'folded-edge' | 'paper';
+
+/** What the pointer is over before you press (Phase 1 polish, plan 1). */
+export interface HoverView {
+  readonly zone: ZoneKind;
+  readonly screen: { readonly x: number; readonly y: number };
+  /** Screen direction away from the model: badges go that side, off the paper. */
+  readonly away: { readonly x: number; readonly y: number };
+  /** Layers you'd pick up here, the fewest that can move on their own, and how many there are. */
+  readonly layers: number;
+  readonly min: number;
+  readonly total: number;
+  /** The corner's ring, or the folded edge's glow (table plane). */
+  readonly corner?: Vec2;
+  readonly edge?: { readonly a: Vec2; readonly b: Vec2 };
+  /** True while the button is down and nothing has moved yet (scroll picks layers). */
+  readonly pressed: boolean;
+}
+
+/** The corner curl while hovering: a small validated fold the skin shows a little open. */
+export interface PeekView {
+  readonly key: string;
+  readonly after: Snapshot;
+  readonly transition: MotionTransition;
 }
 
 export interface KeyboardFold {
@@ -97,8 +125,12 @@ export interface Paperstate {
   readonly creaseOverlay: CreaseOverlay | null;
   readonly keyboard: KeyboardFold | null;
   readonly lastRefusal: { readonly reason: ReasonCode; readonly at: number } | null;
-  /** The alternative the user picked last time (it leads when valid). */
-  readonly preferred: CandidateKind | null;
+  /** What the user picked last time for each kind of press (it leads when valid). */
+  readonly preferredByZone: Partial<Record<ZoneKind, CandidateKind>>;
+  readonly hover: HoverView | null;
+  readonly peek: PeekView | null;
+  /** Set while a drag is live: pick alternative i (the strip, for touch). */
+  readonly choose: ((i: number) => void) | null;
   readonly handedness: HandSide;
   readonly stepsView: StepsView | null;
 }
@@ -150,7 +182,10 @@ export const useStore = create<Paperstate & PaperActions>((set) => ({
   creaseOverlay: null,
   keyboard: null,
   lastRefusal: null,
-  preferred: null,
+  preferredByZone: {},
+  hover: null,
+  peek: null,
+  choose: null,
   handedness: 'right',
   stepsView: null,
   set: (partial) => set(partial),

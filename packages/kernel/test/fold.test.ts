@@ -8,6 +8,7 @@ import {
   fromFold,
   toFold,
   orderOf,
+  recognize,
   stackAt,
   type KernelState,
   type Move,
@@ -197,6 +198,22 @@ describe('burnish', () => {
   it('refuses when there is no fold on that line', () => {
     const r = apply(sheet(), { type: 'burnish', params: { line, amount: 1 } } as Move);
     expect(!r.ok && r.reason).toBe('missed');
+  });
+
+  it('refuses a crease that changes nothing, so it adds no step', () => {
+    const sharp = mustApply(bookFold(), { type: 'burnish', params: { line, amount: 1 } });
+    const r = apply(sharp, { type: 'burnish', params: { line, amount: 1 } } as Move);
+    expect(!r.ok && r.reason).toBe('unchanged');
+    const again = apply(sharp, { type: 'burnish', params: { line, from: -20, to: 20, amount: 0.5 } } as Move);
+    expect(!again.ok && again.reason).toBe('unchanged');
+  });
+
+  it('a second stroke on another part of a creased fold is still named a crease', () => {
+    const half = mustApply(bookFold(), { type: 'burnish', params: { line, from: 0, to: 50, amount: 1 } });
+    const both = mustApply(half, { type: 'burnish', params: { line, from: -50, to: 0, amount: 1 } });
+    const r = recognize(half, both);
+    expect(r.name).toBe('crease');
+    expect(r.confidence).toBeGreaterThanOrEqual(0.5);
   });
 });
 

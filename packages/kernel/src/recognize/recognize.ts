@@ -2,7 +2,6 @@ import { compose, frontUp, type Rigid3 } from '../geometry/rigid.ts';
 import type { Vec2 } from '../geometry/vec.ts';
 import { centroid, containsStrictly } from '../geometry/polygon.ts';
 import { adjacency, getVertex, materialPolygon } from '../paper/creasePattern.ts';
-import { maxSpan } from '../paper/spans.ts';
 import type { EdgeId, FaceId, VertexId } from '../paper/types.ts';
 import { orderOf } from '../state/order.ts';
 import type { KernelState } from '../state/types.ts';
@@ -103,9 +102,13 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
       return { name: flipped ? 'turn-over' : 'rotate', confidence: 0.99 };
     }
     if (rigid && !moved) {
+      // Sharper anywhere along a fold, not just at its sharpest point: a second stroke on
+      // another part of a creased fold is still a crease.
+      const total = (spans: readonly { from: number; to: number; value: number }[]) =>
+        spans.reduce((sum, sp) => sum + (sp.to - sp.from) * sp.value, 0);
       const sharper = [...after.cp.creases.values()].some((c) => {
         const o = before.cp.creases.get(c.id);
-        return o !== undefined && maxSpan(c.sharpness) > maxSpan(o.sharpness);
+        return o !== undefined && total(c.sharpness) > total(o.sharpness) + 1e-12;
       });
       if (sharper) return { name: 'crease', confidence: 0.95 };
     }

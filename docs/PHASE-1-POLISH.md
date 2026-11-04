@@ -1,7 +1,10 @@
-# Phase 1 polish: plan for review
+# Phase 1 polish
 
-Two fixes before Phase 2, from your review of Phase 1. Nothing here is built yet; this is the plan to
-approve or change.
+Two fixes before Phase 2, from your review of Phase 1. Both were approved with the recommended
+answers.
+
+**Status:** plan 1 is built (ADR-037, ADR-038; Playwright covers the corner fold, hover and scroll,
+push in and pull out). Plan 2 is next.
 
 1. **Say what you mean with a mouse.** Grabbing a corner or an edge should do what you meant, and
    you should see what that will be before and during the drag.

@@ -14,11 +14,12 @@ pnpm typecheck
 pnpm e2e        # Playwright smoke tests
 ```
 
-Drag a corner to where it should land; the paper bends under the pointer and a chip names the move.
-Tab tries another way (top layer, every layer, inside or outside reverse fold), Shift takes every
-layer, Ctrl/Cmd folds freehand. Run a finger along a fold to crease it (double-click or C creases the
-whole fold). Hold Space and press to pin the paper. Push a folded edge in beside a precrease for an
-inside reverse fold. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes, K folds with the
+Hover a corner to see which layers you'd pick up, then drag it to where it should land; the paper
+bends under the pointer. Push a folded edge in to tuck the tip inside (inside reverse fold), pull it
+out to wrap it around (outside), or run along it to crease it. While the button is down, scroll (or
+Tab, 1–9) to pick how many layers or another way to fold; small pictures by the pointer show the
+choices. Shift takes every layer, Ctrl/Cmd folds freehand, double-click or C creases the whole fold.
+Hold Space and press to pin the paper. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes, K folds with the
 keyboard. Drag the table to orbit. **Steps** plays your design back as build steps with hands,
 symbols and captions. The **Bend lab** is the paper-realism playground.
 

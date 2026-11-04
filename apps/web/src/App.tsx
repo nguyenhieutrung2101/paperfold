@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { creaseActive, exportFold, goTo, newSheet, openFold, openSteps, performMove, redo, undo } from './actions.ts';
 import { FoldView } from './fold/FoldView.tsx';
-import type { Thumb } from './kernel/api.ts';
+import type { Thumb, View } from './kernel/api.ts';
+import { ChoiceStrip, HoverBadge } from './fold/Choices.tsx';
 import { StepsPlayer } from './steps/StepsPlayer.tsx';
 import { LabView } from './lab/LabView.tsx';
 import { PRESET_ORDER, PRESETS, type PresetId } from './presets.ts';
-import { candidateName, moveNames, strings } from './strings.en.ts';
+import { moveNames, strings } from './strings.en.ts';
 import { saveTheme, useStore } from './store.ts';
 
 function hasWebGL2(): boolean {
@@ -215,6 +216,11 @@ function Timeline() {
   );
 }
 
+/** Is there a folded edge to push (any fold that's still folded)? */
+function hasFoldedEdge(view: View | null): boolean {
+  return view?.snapshot.creases.some((c) => c.left !== null && c.right !== null && Math.abs(c.angleDeg) === 180) ?? false;
+}
+
 function Hints() {
   const hint = useStore((s) => s.hint);
   const firstRun = useStore((s) => s.firstRun);
@@ -236,12 +242,7 @@ function Hints() {
   if (mode === 'fold' && firstRun === 0 && steps === 0) intro = strings.firstRun[0]!;
   else if (mode === 'fold' && firstRun === 1 && active && active.creasedAt === null) intro = strings.firstRun[1]!;
   else if (mode === 'fold' && firstRun === 2 && !drag) intro = coarse ? strings.firstRunTouchHold : strings.firstRun[2]!;
-  // The chip names the move when it isn't a plain fold of the top layer.
-  const cand = drag?.candidates[drag.selected];
-  const chip =
-    drag && cand && !drag.resisting && (cand.kind !== 'fold-top' || drag.candidates.length > 1)
-      ? { text: candidateName(cand.kind, cand.layers), more: drag.candidates.length > 1 }
-      : null;
+  else if (mode === 'fold' && firstRun === 3 && steps > 0 && !drag && hasFoldedEdge(view)) intro = strings.firstRun[3]!;
   return (
     <>
       {intro && !keyboard && (
@@ -254,12 +255,8 @@ function Hints() {
           {keyboard.text}
         </div>
       )}
-      {chip && drag && (
-        <div className="chip" style={{ left: drag.pointer.x + 16, top: drag.pointer.y - 36 }}>
-          {chip.text}
-          {chip.more && <kbd>{strings.tabForMore}</kbd>}
-        </div>
-      )}
+      {mode === 'fold' && <ChoiceStrip />}
+      {mode === 'fold' && <HoverBadge />}
       {showPointer && (
         <div className="pointer-hint" role="status" style={{ left: hint.x + 14, top: hint.y + 14 }}>
           {hint.text}

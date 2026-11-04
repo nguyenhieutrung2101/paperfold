@@ -83,12 +83,31 @@ export interface DragQuery {
   readonly seed: Vec2;
   readonly holds: readonly Vec2[];
   readonly allLayers: boolean;
-  /** Tab presses so far: which alternative to show. */
+  /** Scroll, Tab and 1–4 so far: which alternative to show. */
   readonly index: number;
-  /** The kind the user picked last time (it leads when it's valid). */
+  /** How many layers the hover showed and the scroll picked (plain folds start there). */
+  readonly layers?: number;
+  /** Kinds that lead (a push on a folded edge leads with its reverse fold). */
+  readonly lead?: readonly CandidateKind[];
+  /** The kind the user picked last time for this kind of press (it leads when it's valid). */
   readonly preferred?: CandidateKind;
-  /** Only these kinds (the push gesture is always an inside reverse fold). */
-  readonly only?: readonly CandidateKind[];
+}
+
+/** Hovering a corner: lift the layers you'd pick up a little, so you can see them. */
+export interface PeekQuery {
+  readonly corner: Vec2;
+  /** Layers asked for; the answer may take more when fewer can't move on their own. */
+  readonly layers: number;
+}
+
+export interface PeekResult {
+  /** Layers the curl actually lifts. */
+  readonly layers: number;
+  /** The fewest layers that can move here on their own (the rest are joined to them). */
+  readonly min: number;
+  /** Layers under the corner. */
+  readonly total: number;
+  readonly preview: { readonly after: Snapshot; readonly transition: MotionTransition } | null;
 }
 
 export interface CandidateStatus {
@@ -164,6 +183,7 @@ export class KernelHost {
   private thumbs = new WeakMap<KernelState, Thumb>();
   private names = new WeakMap<KernelState, MoveName>();
   private exploreCache: { key: string; results: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove> }> } | null = null;
+  private peekCache: { key: string; result: PeekResult } | null = null;
 
   reset(options: SheetOptions): View {
     this.history = createHistory(createSheet(options));
@@ -182,14 +202,15 @@ export class KernelHost {
    */
   explore(q: DragQuery): DragPreview {
     const state = currentState(this.history);
-    const key = JSON.stringify([q.line, q.seed, q.holds, q.only ?? null, this.history.current]);
+    const key = JSON.stringify([q.line, q.seed, q.holds, q.layers ?? 1, this.history.current]);
     if (!this.exploreCache || this.exploreCache.key !== key) {
       const st = stackAt(state, q.seed);
       const layers = st.ok ? st.faces.length : 1;
       let cands = candidateMoves({ line: { p: q.line.p, d: q.line.d }, seed: q.seed, layersAtSeed: layers, holds: q.holds });
-      // Keep the list short on deep stacks: top, all, a couple of k, and the reverse folds.
-      cands = cands.filter((c) => c.kind !== 'fold-layers' || c.layers <= 3);
-      if (q.only) cands = cands.filter((c) => q.only!.includes(c.kind));
+      // Keep the list short on deep stacks: top, all, a few k near the picked count, and the
+      // reverse folds.
+      const k = q.layers ?? 1;
+      cands = cands.filter((c) => c.kind !== 'fold-layers' || c.layers <= 3 || Math.abs(c.layers - k) <= 1);
       const results = cands.map((candidate) => {
         const result = applyMove(state, candidate.move);
         return { candidate, ok: result.ok, result };
@@ -198,6 +219,8 @@ export class KernelHost {
     }
     const ordered = orderCandidates(this.exploreCache.results, {
       allLayers: q.allLayers,
+      ...(q.layers !== undefined ? { layers: q.layers } : {}),
+      ...(q.lead ? { lead: q.lead } : {}),
       ...(q.preferred ? { preferred: q.preferred } : {}),
     });
     const selected = ordered.length === 0 ? 0 : ((q.index % ordered.length) + ordered.length) % ordered.length;
@@ -226,6 +249,62 @@ export class KernelHost {
       },
       refusal: null,
     };
+  }
+
+  /**
+   * Hovering a corner (Phase 1 polish, plan 1): a small fold of the corner by the layers you'd
+   * pick up, validated like any move, for the skin to show a few degrees open. If that many
+   * layers can't move on their own (they're joined), it takes as many as it must.
+   */
+  peek(q: PeekQuery): PeekResult {
+    const state = currentState(this.history);
+    const key = JSON.stringify([q.corner, q.layers, this.history.current]);
+    if (this.peekCache?.key === key) return this.peekCache.result;
+    const size = state.paper.outline.reduce((m, p) => Math.max(m, Math.abs(p[0]), Math.abs(p[1])), 0) * 2;
+    // Into the paper from the corner: the mean direction of nearby points that are on it.
+    let ux = 0;
+    let uy = 0;
+    const r = Math.max(0.5, size * 0.01);
+    for (let i = 0; i < 24; i++) {
+      const a = ((i + 0.5) / 24) * Math.PI * 2;
+      const st = stackAt(state, [q.corner[0] + Math.cos(a) * r, q.corner[1] + Math.sin(a) * r]);
+      if (st.ok && st.faces.length > 0) {
+        ux += Math.cos(a);
+        uy += Math.sin(a);
+      }
+    }
+    const ul = Math.hypot(ux, uy);
+    const none: PeekResult = { layers: q.layers, min: 1, total: 0, preview: null };
+    if (ul < 1e-9) return none;
+    const u: Vec2 = [ux / ul, uy / ul];
+    const seed: Vec2 = [q.corner[0] + u[0] * r, q.corner[1] + u[1] * r];
+    const st = stackAt(state, seed);
+    const total = st.ok ? st.faces.length : 0;
+    if (total === 0) return none;
+    const dist = Math.min(16, size * 0.11);
+    const line = { p: [q.corner[0] + u[0] * dist, q.corner[1] + u[1] * dist] as Vec2, d: [-u[1], u[0]] as Vec2 };
+    // From k layers up: the first count that can move on its own (joined layers go together).
+    const tryFrom = (from: number): { k: number; r: ReturnType<typeof applyMove> | null } => {
+      let k = Math.max(1, Math.min(total, from));
+      while (k <= total) {
+        const r2 = applyMove(state, { type: 'fold', params: { line, seed, layers: k >= total ? 'all' : k, direction: 'valley' } });
+        if (r2.ok) return { k, r: r2 };
+        if (r2.reason !== 'joined') return { k, r: null };
+        k = Math.max(k + 1, r2.suggestLayers ?? 0);
+      }
+      return { k: total, r: null };
+    };
+    const least = tryFrom(1);
+    const pick = q.layers <= least.k ? least : tryFrom(q.layers);
+    const tr = pick.r && pick.r.ok && pick.r.transition.kind === 'fold' ? pick.r : null;
+    const result: PeekResult = {
+      layers: Math.min(pick.k, total),
+      min: Math.min(least.k, total),
+      total,
+      preview: tr && tr.ok && tr.transition.kind === 'fold' ? { after: snapshot(tr.state), transition: tr.transition } : null,
+    };
+    this.peekCache = { key, result };
+    return result;
   }
 
   /** Commit a move; the grab and holds (table plane) are recorded for the build steps. */

@@ -81,6 +81,8 @@ export type ReasonCode =
   | 'held'
   /** The stack is too thick to crease that sharp. */
   | 'too-thick'
+  /** A crease that changes nothing: it's already that sharp there. */
+  | 'unchanged'
   /** The motion would stretch or tear the paper. */
   | 'tear'
   /** Not supported by this phase of the kernel. */

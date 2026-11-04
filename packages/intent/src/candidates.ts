@@ -48,28 +48,42 @@ export function candidateMoves(o: CandidateOptions): Candidate[] {
   return out;
 }
 
+/** What the press and the user's choices say about the order. */
+export interface OrderOptions {
+  /** Shift: every layer first. */
+  readonly allLayers: boolean;
+  /** How many layers the hover showed and the scroll picked (plain folds start there). */
+  readonly layers?: number;
+  /** Kinds that lead, in this order (a push on a folded edge leads with its reverse fold). */
+  readonly lead?: readonly CandidateKind[];
+  /** What the user picked last time for this kind of press: it leads when it's valid. */
+  readonly preferred?: CandidateKind;
+}
+
 /**
- * The order candidates show in. On a closed flap, a swing of the tip is a reverse fold
- * first: inside, then outside, then a plain fold through both layers, then the top layer
- * (brief, section 5). Otherwise the top layer comes first (Shift: all layers first).
- * Invalid candidates drop out; if nothing is valid, the first one stays so its refusal can
- * be explained.
+ * The order candidates show in (Phase 1 polish, plan 1). Where you press decides the first
+ * guess: a corner or the paper folds the layers you picked up (then more layers, then fewer),
+ * with reverse folds last; a push on a folded edge leads with its reverse fold, then folds
+ * every layer. Invalid candidates drop out; if nothing is valid, the first one stays so its
+ * refusal can be explained.
  */
 export function orderCandidates<T extends { readonly candidate: Candidate; readonly ok: boolean }>(
   list: readonly T[],
-  opts: { readonly allLayers: boolean; readonly preferred?: CandidateKind },
+  opts: OrderOptions,
 ): T[] {
-  const reverseOk = list.some((x) => x.ok && (x.candidate.kind === 'inside-reverse' || x.candidate.kind === 'outside-reverse'));
+  const lead = opts.lead ?? [];
+  const k = opts.layers ?? 1;
   const rank = (c: Candidate): number => {
-    if (reverseOk) {
-      const order: CandidateKind[] = ['inside-reverse', 'outside-reverse', 'fold-all', 'fold-top', 'fold-layers'];
-      return order.indexOf(c.kind) * 100 + c.layers;
-    }
-    if (opts.allLayers) return c.kind === 'fold-all' ? 0 : c.kind === 'fold-top' ? 100 : c.kind === 'fold-layers' ? 200 + c.layers : 900;
-    return c.kind === 'fold-top' ? 0 : c.kind === 'fold-layers' ? 100 + c.layers : c.kind === 'fold-all' ? 300 : 900;
+    const li = lead.indexOf(c.kind);
+    if (li >= 0) return li;
+    const base = 100;
+    if (c.kind === 'inside-reverse') return base + 900;
+    if (c.kind === 'outside-reverse') return base + 901;
+    if (opts.allLayers) return base + (c.kind === 'fold-all' ? 0 : 500 - c.layers);
+    // Plain folds: the picked count first, then more layers, then fewer.
+    return base + (c.layers >= k ? c.layers - k : 400 + (k - c.layers));
   };
   const sorted = [...list].sort((a, b) => rank(a.candidate) - rank(b.candidate));
-  // Remember the user's recent choice: if it's valid now, it leads.
   if (opts.preferred) {
     const i = sorted.findIndex((x) => x.ok && x.candidate.kind === opts.preferred);
     if (i > 0) sorted.unshift(...sorted.splice(i, 1));
