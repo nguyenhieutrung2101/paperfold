@@ -17,6 +17,11 @@ export interface CandidateOptions {
   readonly layersAtSeed: number;
   readonly holds?: readonly Vec2[];
   readonly direction?: 'valley' | 'mountain';
+  /**
+   * Folded edges of the picked-up flap that it could be squashed on (a squash turns on the
+   * flap's own hinge, not on the drag's line). None: no squash candidates.
+   */
+  readonly squashHinges?: readonly Line2[];
 }
 
 /**
@@ -39,9 +44,11 @@ export function candidateMoves(o: CandidateOptions): Candidate[] {
   if (o.layersAtSeed > 1) {
     // The top layer's corner, when it can't fold alone, lifts as a petal on the same line.
     out.push({ kind: 'petal', layers: 1, move: { type: 'petal', params: { hinge: line, seed: o.seed, layers: 1, holds } } });
-    // A closed flap turned over its hinge can be squashed flat instead.
-    for (let k = 2; k <= o.layersAtSeed; k++) {
-      out.push({ kind: 'squash', layers: k, move: { type: 'squash', params: { hinge: line, seed: o.seed, layers: k, holds } } });
+    // A closed flap can be squashed flat on one of its folded edges.
+    for (const h of o.squashHinges ?? []) {
+      for (let k = 2; k <= o.layersAtSeed; k++) {
+        out.push({ kind: 'squash', layers: k, move: { type: 'squash', params: { hinge: { p: h.p, d: h.d }, seed: o.seed, layers: k, holds } } });
+      }
     }
     for (const kind of ['inside', 'outside'] as const) {
       out.push({

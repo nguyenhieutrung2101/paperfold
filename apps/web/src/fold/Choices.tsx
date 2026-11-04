@@ -26,6 +26,26 @@ export function MovePicture({ kind, layers }: { readonly kind: PictureKind; read
   const sheet = { fill: 'var(--paper-fill)', stroke: 'var(--text)', strokeWidth: 1.4, strokeLinejoin: 'round' as const };
   const moved = { fill: 'var(--accent)', stroke: 'var(--text)', strokeWidth: 1.4, strokeLinejoin: 'round' as const };
   const tipped = kind === 'inside-reverse' || kind === 'outside-reverse' || kind === 'push';
+  if (kind === 'squash') {
+    // A flap opened and pressed flat into a diamond over its hinge.
+    return (
+      <svg viewBox="0 0 40 40" className="move-picture" aria-hidden="true">
+        <polygon points="6,34 34,34 20,10" {...sheet} />
+        <polygon points="20,10 29,22 20,34 11,22" {...moved} />
+        <line x1="20" y1="10" x2="20" y2="34" stroke="var(--text)" strokeWidth={1} />
+      </svg>
+    );
+  }
+  if (kind === 'petal') {
+    // The bottom point lifted up on a hinge, the sides folded in under it.
+    return (
+      <svg viewBox="0 0 40 40" className="move-picture" aria-hidden="true">
+        <polygon points="20,14 33,25 20,37 7,25" {...sheet} />
+        <polygon points="20,3 25,20 20,25 15,20" {...moved} />
+        <line x1="13.5" y1="20" x2="26.5" y2="20" stroke="var(--text)" strokeWidth={1} strokeDasharray="2 1.5" />
+      </svg>
+    );
+  }
   return (
     <svg viewBox="0 0 40 40" className="move-picture" aria-hidden="true">
       {tipped ? (
@@ -56,7 +76,7 @@ export function MovePicture({ kind, layers }: { readonly kind: PictureKind; read
 
 /**
  * While dragging: every way this drag could fold, as small pictures by the pointer. The one
- * the paper shows is highlighted; scroll, Tab or 1–4 switch, and on touch a tap does.
+ * the paper shows is highlighted; scroll, Tab or 1–9 switch, and on touch a tap does.
  */
 export function ChoiceStrip() {
   const drag = useStore((s) => s.drag);
@@ -94,7 +114,7 @@ export function ChoiceStrip() {
       <div className="strip-label">
         {plain ? <strong>{snapName}</strong> : <strong>{candidateName(sel.kind, sel.layers)}</strong>}
         {!plain && snapName && <span className="snap-name">{snapName}</span>}
-        {drag.candidates.length > 1 && <span className="muted">{strings.stripHint}</span>}
+        {drag.candidates.length > 1 && <span className="muted">{strings.stripHint(drag.candidates.length)}</span>}
       </div>
     </div>
   );

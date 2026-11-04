@@ -220,10 +220,29 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       return latest;
     };
 
+    /**
+     * A squash doesn't turn about the drag's line: how far along it is comes from how far the
+     * pressed point has gone toward where the squash puts it.
+     */
+    const squashTurn = (gg: Gesture): boolean => {
+      const pv = gg.result?.preview;
+      if (gg.stage !== 'grab' || !pv || (pv.transition.kind !== 'squash' && pv.transition.kind !== 'petal') || !pv.landing) return false;
+      const dx = pv.landing[0] - gg.start[0];
+      const dy = pv.landing[1] - gg.start[1];
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1e-6) return false;
+      const k = Math.max(0, Math.min(1, ((gg.pointer[0] - gg.start[0]) * dx + (gg.pointer[1] - gg.start[1]) * dy) / len2));
+      gg.geo = Math.PI * k;
+      const tilt = 0.06 + 0.5 * Math.min(1, gg.speed / 260);
+      gg.theta = Math.min(gg.geo, Math.PI - tilt);
+      return true;
+    };
+
     const applyResult = (r: DragPreview) => {
       if (!g) return;
       g.result = r;
       if (r.preview) g.lastValid = r.preview;
+      squashTurn(g);
       st().set({
         glow: r.preview ? new Set() : new Set(r.refusal?.blockers ?? []),
       });
@@ -291,7 +310,13 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
           resisting,
           candidates: r?.candidates ?? [],
           selected: r?.selected ?? 0,
-          line: g.stage === 'push' ? (g.push?.line ?? null) : g.line,
+          // A squash or petal turns on the paper's own hinge, not the drag's line.
+          line:
+            r?.preview && (r.preview.transition.kind === 'squash' || r.preview.transition.kind === 'petal')
+              ? r.preview.transition.hinge
+              : g.stage === 'push'
+                ? (g.push?.line ?? null)
+                : g.line,
           marks: g.marks,
           pointer: g.screen,
           away: awayFrom(g.screen.x, g.screen.y),
@@ -504,6 +529,7 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
         const tilt = 0.06 + 0.5 * Math.min(1, g.speed / 260);
         g.theta = Math.min(geo, Math.PI - tilt);
         g.geo = geo;
+        squashTurn(g);
         const q = queryFor(g);
         if (q) void runExplore(q);
         publish();

@@ -87,7 +87,7 @@ describe('snapping', () => {
 });
 
 describe('candidates', () => {
-  const opts = { line: lineThrough([0, 0], [0, 1]), seed: [10, 0] as Vec2, layersAtSeed: 3 };
+  const opts = { line: lineThrough([0, 0], [0, 1]), seed: [10, 0] as Vec2, layersAtSeed: 3, squashHinges: [lineThrough([0, 0], [1, 1])] };
   const kinds = <T extends { candidate: { kind: string; layers: number } }>(xs: T[]) => xs.map((x) => `${x.candidate.kind}:${x.candidate.layers}`);
 
   it('lists top, k and all layers, a petal, squashes, and both reverse folds', () => {

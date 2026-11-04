@@ -240,3 +240,59 @@ test('the bend lab renders', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Bend lab' })).toBeVisible();
   await expect(page.locator('.lab canvas')).toBeVisible();
 });
+
+/** Fold the first n steps of the crane (kernel/test/crane.ts) the way the app does. */
+async function craneSteps(page: Page, n: number) {
+  const url = `/@fs${new URL('../../../packages/kernel/test/crane.ts', import.meta.url).pathname}`;
+  const kern = `/@fs${new URL('../../../packages/kernel/src/index.ts', import.meta.url).pathname}`;
+  await page.evaluate(
+    async ([u, k, count]) => {
+      const kernel = await import(/* @vite-ignore */ k as string);
+      const crane = await import(/* @vite-ignore */ u as string);
+      const app = (window as unknown as { __paperfold: { performMove(m: unknown): Promise<void> } }).__paperfold;
+      let s = kernel.createSheet({ sizeMm: 150 });
+      for (let i = 0; i < (count as number); i++) {
+        const m = crane.CRANE[i].move(s);
+        s = kernel.applyMove(s, m).state;
+        await app.performMove(m);
+      }
+    },
+    [url, kern, n] as const,
+  );
+  await expect(steps(page)).toHaveCount(n + 1);
+}
+
+/** While dragging, pick the strip's alternative by name with its number key. */
+async function pickInStrip(page: Page, name: string) {
+  const items = page.locator('.strip button');
+  await expect(page.locator('.strip')).toBeVisible();
+  const n = await items.count();
+  for (let i = 0; i < n; i++) {
+    await page.keyboard.press(String(i + 1));
+    try {
+      await expect(page.locator('.strip')).toContainText(name, { timeout: 4000 });
+      return;
+    } catch {
+      // Not this one: try the next.
+    }
+  }
+  throw new Error(`${name} is not in the strip`);
+}
+
+test('squash a closed flap: drag it over its hinge and pick Squash fold', async ({ page }) => {
+  await craneSteps(page, 2);
+  await dragMm(page, [60, 70], [-60, 70], async () => {
+    await pickInStrip(page, 'Squash fold');
+  });
+  await expect(steps(page)).toHaveCount(4);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Squash fold');
+});
+
+test('a petal fold: drag the bottom corner of the top layer up; it leads', async ({ page }) => {
+  await craneSteps(page, 9);
+  await dragMm(page, [70, 70], [-15, -15], async () => {
+    await expect(page.locator('.strip')).toContainText('Petal fold');
+  });
+  await expect(steps(page)).toHaveCount(11);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '10. Petal fold');
+});

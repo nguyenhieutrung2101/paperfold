@@ -102,7 +102,7 @@ export const strings = {
   scrollLayers: (which: 'more' | 'fewer', pressed: boolean) => `${pressed ? 'Scroll' : 'Hold and scroll'} for ${which} layers`,
   pushIn: 'Push in: tuck the tip inside',
   pushSub: 'Pull out to wrap it, or run along to crease',
-  stripHint: 'Scroll or 1–4',
+  stripHint: (n: number) => `Scroll or 1–${Math.min(9, n)}`,
   // What a snapped drag lines up with.
   targetNames: {
     half: 'In half',

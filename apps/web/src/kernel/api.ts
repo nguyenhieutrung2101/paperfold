@@ -1,7 +1,12 @@
 import { type Candidate, type CandidateKind, candidateMoves, orderCandidates } from '@paperfold/intent';
 import {
+  adjacency,
   applyMaterial,
   applyMove,
+  containsStrictly,
+  faceEdges,
+  flatView,
+  materialPolygon,
   applyPlaneIso,
   canRedo,
   canUndo,
@@ -128,6 +133,8 @@ export interface DragPreview {
     readonly transition: MotionTransition;
     readonly name: MoveName;
     readonly confident: boolean;
+    /** Where the pressed point ends up (table plane): how far along a squash the drag is. */
+    readonly landing: Vec2 | null;
   } | null;
   readonly refusal: Refusal | null;
 }
@@ -153,6 +160,135 @@ export interface StepsView {
   readonly steps: readonly PlayerStep[];
   readonly verified: boolean;
   readonly brokenAt?: number;
+}
+
+/** Lines of the folded edges around the top `k` layers under p: where a flap could squash. */
+function squashHinges(state: KernelState, p: Vec2, k: number): PlaneLine[] {
+  const view = flatView(state);
+  const st = stackAt(state, p);
+  if (!view || !st.ok) return [];
+  const adj = adjacency(state.cp);
+  const out: PlaneLine[] = [];
+  const tol = state.tol.len * 100;
+  for (const f of st.faces.slice(0, k)) {
+    for (const e of faceEdges(state.cp, f)) {
+      const c = state.cp.creases.get(e)!;
+      const ef = adj.edgeFaces.get(e)!;
+      if (ef.left === null || ef.right === null || Math.abs(c.angleDeg) !== 180) continue;
+      const a = view.vertexWorld.get(c.v[0])!;
+      const b = view.vertexWorld.get(c.v[1])!;
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (l < tol) continue;
+      const d: Vec2 = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+      const same = out.some((h) => Math.abs((a[0] - h.p[0]) * h.d[1] - (a[1] - h.p[1]) * h.d[0]) < tol && Math.abs(d[0] * h.d[1] - d[1] * h.d[0]) < 1e-6);
+      if (!same) out.push({ p: a, d });
+    }
+  }
+  return out;
+}
+
+/**
+ * Where the top layer under p would lift as a petal (its hinge), worked out from the paper:
+ * the layer's flat region must be held by two folded edges; the tip is its corner nearest p;
+ * each kite line runs from the tip along a precrease if there is one, else halfway between the
+ * raw edge and the middle line; the hinge joins where the kite lines meet the folded edges.
+ */
+function petalHinge(state: KernelState, p: Vec2): PlaneLine | null {
+  const view = flatView(state);
+  const st = stackAt(state, p);
+  if (!view || !st.ok || st.faces.length < 2) return null;
+  const adj = adjacency(state.cp);
+  const top = st.faces[0]!;
+  const region = new Set([top]);
+  const q = [top];
+  for (let i = 0; i < q.length; i++) {
+    for (const e of faceEdges(state.cp, q[i]!)) {
+      const c = state.cp.creases.get(e)!;
+      const ef = adj.edgeFaces.get(e)!;
+      const g = ef.left === q[i] ? ef.right : ef.left;
+      if (g === null || region.has(g) || c.angleDeg !== 0) continue;
+      region.add(g);
+      q.push(g);
+    }
+  }
+  type Seg = readonly [Vec2, Vec2];
+  const folded: Seg[] = [];
+  const raw: Seg[] = [];
+  const flat: Seg[] = [];
+  for (const f of region) {
+    for (const e of faceEdges(state.cp, f)) {
+      const c = state.cp.creases.get(e)!;
+      const ef = adj.edgeFaces.get(e)!;
+      const g = ef.left === f ? ef.right : ef.left;
+      const seg: Seg = [view.vertexWorld.get(c.v[0])!, view.vertexWorld.get(c.v[1])!];
+      if (g === null) raw.push(seg);
+      else if (!region.has(g) && Math.abs(c.angleDeg) === 180) folded.push(seg);
+      else if (region.has(g) && c.angleDeg === 0) flat.push(seg);
+    }
+  }
+  const tol = state.tol.len * 100;
+  const sub = (a: Vec2, b: Vec2): Vec2 => [a[0] - b[0], a[1] - b[1]];
+  const unit = (v: Vec2): Vec2 => {
+    const l = Math.hypot(v[0], v[1]) || 1;
+    return [v[0] / l, v[1] / l];
+  };
+  const cross = (a: Vec2, b: Vec2) => a[0] * b[1] - a[1] * b[0];
+  const onLine = (s: Seg, x: Vec2) => Math.abs(cross(unit(sub(s[1], s[0])), sub(x, s[0]))) < tol;
+  // The two folded edge lines.
+  const sides: Seg[] = [];
+  for (const s of folded) if (!sides.some((t) => onLine(t, s[0]) && onLine(t, s[1]))) sides.push(s);
+  if (sides.length !== 2) return null;
+  const meet = (o: Vec2, d: Vec2, s: Seg): Vec2 | null => {
+    const e = sub(s[1], s[0]);
+    const den = cross(d, e);
+    if (Math.abs(den) < 1e-9) return null;
+    const t = cross(sub(s[0], o), e) / den;
+    return t > tol ? [o[0] + d[0] * t, o[1] + d[1] * t] : null;
+  };
+  // The tip: the region's corner nearest the press, not on a folded edge.
+  const corners = raw.flatMap((s) => [s[0], s[1]]).filter((x) => !sides.some((s) => onLine(s, x)));
+  if (corners.length === 0) return null;
+  const A = corners.reduce((b, x) => (Math.hypot(x[0] - p[0], x[1] - p[1]) < Math.hypot(b[0] - p[0], b[1] - p[1]) ? x : b));
+  // The middle line: from the tip toward where the folded edges meet.
+  const e0 = unit(sub(sides[0]![1], sides[0]![0]));
+  const O = meet(sides[0]![0], e0, sides[1]!) ?? meet(sides[0]![1], [-e0[0], -e0[1]], sides[1]!);
+  if (!O) return null;
+  const mid = unit(sub(O, A));
+  const at = (A0: Vec2) => (x: Vec2) => Math.hypot(x[0] - A0[0], x[1] - A0[1]) < tol;
+  const fromA = at(A);
+  const X: Vec2[] = [];
+  for (const side of sides) {
+    // The raw edge from the tip to this side.
+    const edge = raw.find((s) => (fromA(s[0]) && onLine(side, s[1])) || (fromA(s[1]) && onLine(side, s[0])));
+    if (!edge) return null;
+    const far = fromA(edge[0]) ? edge[1] : edge[0];
+    const half = unit([unit(sub(far, A))[0] + mid[0], unit(sub(far, A))[1] + mid[1]]);
+    // A precrease from the tip close to the halfway line wins.
+    let kite = half;
+    for (const s of flat) {
+      const other = fromA(s[0]) ? s[1] : fromA(s[1]) ? s[0] : null;
+      if (!other) continue;
+      const d = unit(sub(other, A));
+      if (d[0] * half[0] + d[1] * half[1] > Math.cos((12 * Math.PI) / 180)) kite = d;
+    }
+    const x = meet(A, kite, side);
+    if (!x) return null;
+    X.push(x);
+  }
+  const d = unit(sub(X[1]!, X[0]!));
+  return { p: X[0]!, d };
+}
+
+/** Where a point of the top face under p goes in `after` (table plane). */
+function landingOf(before: KernelState, after: KernelState, p: Vec2): Vec2 | null {
+  const st = stackAt(before, p);
+  if (!st.ok || st.faces.length === 0) return null;
+  const m = applyPlaneIso(invertPlaneIso(planeIsoOf(before.folded.placements.get(st.faces[0]!)!)), p);
+  for (const f of after.cp.faces.keys()) {
+    if (!containsStrictly(materialPolygon(after.cp, f), m, after.tol)) continue;
+    return applyPlaneIso(planeIsoOf(after.folded.placements.get(f)!), m);
+  }
+  return null;
 }
 
 function refusal(r: { reason: ReasonCode; blockers: readonly number[]; suggestLayers?: number }): Refusal {
@@ -183,6 +319,8 @@ export class KernelHost {
   private thumbs = new WeakMap<KernelState, Thumb>();
   private names = new WeakMap<KernelState, MoveName>();
   private exploreCache: { key: string; results: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove> }> } | null = null;
+  /** Squash candidates don't depend on the drag's line: once per press. */
+  private squashCache: { key: string; results: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove> }> } | null = null;
   private peekCache: { key: string; result: PeekResult } | null = null;
 
   reset(options: SheetOptions): View {
@@ -207,6 +345,21 @@ export class KernelHost {
       const st = stackAt(state, q.seed);
       const layers = st.ok ? st.faces.length : 1;
       let cands = candidateMoves({ line: { p: q.line.p, d: q.line.d }, seed: q.seed, layersAtSeed: layers, holds: q.holds });
+      const squashKey = JSON.stringify([q.seed, q.holds, this.history.current]);
+      if (!this.squashCache || this.squashCache.key !== squashKey) {
+        const hinges = q.lead ? [] : squashHinges(state, q.seed, Math.min(layers, 4));
+        const squashes = candidateMoves({ line: { p: q.line.p, d: q.line.d }, seed: q.seed, layersAtSeed: Math.min(layers, 4), holds: q.holds, squashHinges: hinges })
+          .filter((c) => c.kind === 'squash');
+        // The petal's own hinge, from the paper (a drag rarely lands exactly on it).
+        const ph = q.lead ? null : petalHinge(state, q.seed);
+        if (ph) squashes.unshift({ kind: 'petal', layers: 1, move: { type: 'petal', params: { hinge: ph, seed: q.seed, layers: 1, holds: [...q.holds] } } });
+        const results = squashes.map((candidate) => {
+          const result = applyMove(state, candidate.move);
+          return { candidate, ok: result.ok, result };
+        });
+        this.squashCache = { key: squashKey, results };
+      }
+      cands = cands.filter((c) => c.kind !== 'squash');
       // Keep the list short on deep stacks: top, all, a few k near the picked count, and the
       // reverse folds.
       const k = q.layers ?? 1;
@@ -215,6 +368,20 @@ export class KernelHost {
         const result = applyMove(state, candidate.move);
         return { candidate, ok: result.ok, result };
       });
+      // A flap squashes on one hinge only once, whatever the layer count that reached it; the
+      // paper's own petal replaces one along the drag's line.
+      const seen = new Set<string>();
+      for (const r of this.squashCache.results) {
+        if (!r.ok || !r.result.ok) continue;
+        const h = r.candidate.kind + ':' + r.result.state.cp.faces.size + ':' + JSON.stringify((r.candidate.move as { params: { hinge: PlaneLine } }).params.hinge);
+        if (seen.has(h)) continue;
+        seen.add(h);
+        if (r.candidate.kind === 'petal') {
+          const i = results.findIndex((x) => x.candidate.kind === 'petal');
+          if (i >= 0) results.splice(i, 1);
+        }
+        results.push(r);
+      }
       this.exploreCache = { key, results };
     }
     const ordered = orderCandidates(this.exploreCache.results, {
@@ -235,7 +402,7 @@ export class KernelHost {
       return { candidates, selected, preview: null, refusal: pick && !pick.result.ok ? refusal(pick.result) : null };
     }
     const tr = pick.result.transition;
-    if (tr.kind !== 'fold' && tr.kind !== 'reverse') return { candidates, selected, preview: null, refusal: null };
+    if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal') return { candidates, selected, preview: null, refusal: null };
     const named = recognize(state, pick.result.state);
     return {
       candidates,
@@ -246,6 +413,7 @@ export class KernelHost {
         transition: tr,
         name: named.name,
         confident: named.confidence >= 0.5,
+        landing: tr.kind === 'squash' || tr.kind === 'petal' ? landingOf(state, pick.result.state, q.seed) : null,
       },
       refusal: null,
     };
