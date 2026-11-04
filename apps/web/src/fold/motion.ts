@@ -182,7 +182,8 @@ export function foldPose(
     const base = profile.at;
     // Not yet sharp in the kernel's eyes? The sweep still shows the finger passing.
     sharpnessAt = (u: number) => Math.max(base(u) * tc, clamp01((reach - Math.abs(u - mid)) / ramp));
-    const restCreased = Math.PI;
+    // A creased fold still springs back a degree or two (paper/physics.ts); ideal paper doesn't.
+    const restCreased = ideal ? Math.PI : (profile.restDeg * Math.PI) / 180;
     theta = theta + (restCreased - theta) * easeOut(tc);
     animating = tc < 1;
     if (!animating && profile.fullySharp) return { motion: null, animating: false };

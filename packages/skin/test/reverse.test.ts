@@ -41,7 +41,7 @@ function scene(c: Case) {
   const r = must(c.before, c.move);
   if (r.transition.kind !== 'reverse') throw new Error('not a reverse fold');
   const after = snapshot(r.state);
-  return { before: snapshot(c.before), after, transition: r.transition as MotionTransition & { kind: 'reverse' }, params: skinParamsFor(after.paper, 'real') };
+  return { before: snapshot(c.before), after, transition: r.transition as MotionTransition & { kind: 'reverse' }, params: { ...skinParamsFor(after.paper, 'real'), restOpen: false } };
 }
 
 /** The widest gap anywhere along a crease: the same paper seen from its two faces. */

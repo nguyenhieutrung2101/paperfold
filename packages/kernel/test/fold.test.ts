@@ -3,6 +3,8 @@ import {
   adjacency,
   checkInvariants,
   flatView,
+  foldedRestDeg,
+  springbackDeg,
   fold,
   frontUp,
   fromFold,
@@ -192,7 +194,10 @@ describe('burnish', () => {
     const c = interiorCreases(half)[0]!;
     expect(c.sharpness).toHaveLength(1);
     expect(c.sharpness[0]!.to - c.sharpness[0]!.from).toBeCloseTo(0.5, 9);
-    expect(c.restAngleDeg).toBe(180);
+    // Fully sharp: it keeps only a fifth of the uncreased springback.
+    expect(c.restAngleDeg).toBeCloseTo(foldedRestDeg(half.paper.stiffness, 1), 9);
+    expect(c.restAngleDeg).toBeLessThan(180);
+    expect(c.restAngleDeg).toBeGreaterThan(180 - springbackDeg(half.paper.stiffness) / 2);
   });
 
   it('refuses when there is no fold on that line', () => {

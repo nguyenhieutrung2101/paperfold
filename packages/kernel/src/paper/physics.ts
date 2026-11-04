@@ -15,9 +15,13 @@ export function springbackDeg(stiffness: number): number {
   return 4 + 14 * clamp01(stiffness);
 }
 
-/** Rest angle magnitude of a folded crease with the given peak sharpness. */
+/**
+ * Rest angle magnitude of a folded crease with the given peak sharpness. Even a crease pressed
+ * hard springs back a little (a fifth of an uncreased fold's springback): real folds never lie
+ * perfectly flat on their own, which is part of what makes the layers readable.
+ */
 export function foldedRestDeg(stiffness: number, sharpness: number): number {
-  return 180 - springbackDeg(stiffness) * (1 - clamp01(sharpness));
+  return 180 - springbackDeg(stiffness) * (0.2 + 0.8 * (1 - clamp01(sharpness)));
 }
 
 /** Degrees of memory an unfolded crease keeps (visible under raking light). */

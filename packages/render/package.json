@@ -5,7 +5,8 @@
   "type": "module",
   "description": "three.js / React Three Fiber rendering: paper material, table, lights, skin meshes.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./raster": "./src/layerRaster.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

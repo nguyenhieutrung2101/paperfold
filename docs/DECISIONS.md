@@ -414,3 +414,53 @@ through paper (a corner folded over both layers keeps them shut, as it does in r
 after; the hover curl is off while relaxed. Kernel states, validation and steps are unchanged.
 APPROXIMATION: the angles are a look, not a measured spring. Plan 2 draws a small,
 always-on version of the same thing (the crease's own rest angle) with shadows.
+
+## ADR-043 · Readable folded paper: rest open, a layer map, and a lightbox
+
+Plan 2 (PHASE-1-POLISH.md), built as the first part of Phase 2.
+
+![Before, after, and on the lightbox](images/phase2-readability.png)
+
+**Chose:**
+
+- **Flaps rest open.** In real paper mode every free flap (ADR-042's flaps) rests at its crease's
+  rest angle, capped so its far end rises at most 3 mm (its weight holds it down). The kernel's
+  rest angle now keeps a fifth of the springback even when fully creased
+  (`foldedRestDeg`), so a hard crease still sits a few degrees open, as kami does. A fold lands at
+  that angle. Ideal paper stays flat. Relaxed folds (R) blends from this resting pose.
+- **A layer map per state** (`skin/src/layerMap.ts`): for each face, in its own sheet
+  coordinates, the outlines of the faces on top of it and under it, and its folded and cut edges.
+  Pure geometry, cached per snapshot.
+- **Rasterized off the main thread** (`render/src/layerRaster.ts`, run by `fold/layers.worker.ts`
+  with OffscreenCanvas): two 768² textures, A = contact shadow, ridge, rim; B = layers below,
+  layers above, cut edges. Where OffscreenCanvas is missing it's built on the main thread at 512².
+  The worker starts on the new state the moment a move commits, so it's ready when the fold lands;
+  until then the map of the state being left stays on (a landing flap's shadow appears when it
+  touches down). The last six states are kept, so undo and redo don't wait.
+- **The paper shader** reads it on the side of each face that faces up (fading out as a face
+  tips past about 55°, so a flap in mid-air doesn't wear a map meant for the table):
+  - a contact shadow about 2.5 mm wide just past every layer on top;
+  - a thin dark line on cut edges;
+  - folded edges rounded off (a 0.3 mm bevel in the normal) with a faint rim of light;
+  - ridges where an edge underneath presses up (0.1 mm; ideal paper has none);
+  - a single layer over the mat a touch darker, by the paper's translucency.
+  Bumps are computed in world units, so they look the same at any zoom.
+- **Lightbox:** hold L to look (a quick tap, or the View panel's switch, leaves it on). The table
+  glows, the room light dims, and each layer passes a share of the light (45–72% by paper), so
+  stacks darken step by step and hidden flaps show at a glance.
+- **Light and camera:** the default view is lower (about 33° from straight down, was 24°) and the
+  key light rakes at about 25° (was 36°), a little brighter to make up for it.
+
+**Rejected:** drawing the layer map in the kernel worker (it would hold up drag previews);
+ctx.filter alone (Safari's canvas has no filter; a halve-and-double pyramid stands in); per-face
+blur passes (too slow at hundreds of faces; the one blur can bleed a shadow 1–2 mm across a crease
+into the neighbouring face, which reads as the crease's own shading).
+
+**Cost:** rasterizing takes about 150 ms in the headless software renderer the tests use (a real
+GPU machine is several times faster), all in the worker. The map geometry is under 1 ms for small
+models. Nothing changes per frame while dragging.
+
+APPROXIMATION: the shadow width, line weights, bevel and ridge heights, rest lift cap and per-layer
+transmission are tuned by eye, not measured (like ADR-015's paper numbers). Flaps rest open
+rigidly about their hinge; real ones also curl a little.
+

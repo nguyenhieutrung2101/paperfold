@@ -125,6 +125,7 @@ function KeyboardMarks({ heightRef }: { readonly heightRef: React.RefObject<numb
 
 export function FoldView() {
   const dark = useStore((s) => s.theme === 'dark');
+  const lightbox = useStore((s) => s.lightbox || s.lightboxHeld);
   const topHeight = useRef(0);
   const onTopHeight = useCallback((h: number) => {
     topHeight.current = h;
@@ -134,11 +135,11 @@ export function FoldView() {
     <Canvas
       shadows="percentage"
       dpr={[1, 2]}
-      camera={{ position: [0, 330, 150], fov: 35, near: 2, far: 4000 }}
+      camera={{ position: [0, 305, 195], fov: 35, near: 2, far: 4000 }}
       gl={{ antialias: true, toneMapping: NeutralToneMapping, preserveDrawingBuffer: true }}
     >
       <color attach="background" args={[dark ? '#141917' : '#dfe4e0']} />
-      <Studio dark={dark} shadows={SHADOWS} />
+      <Studio dark={dark} shadows={SHADOWS} lightbox={lightbox} />
       <PaperModel onTopHeight={onTopHeight} />
       <Ghost heightRef={topHeight} />
       <HoverMarks heightRef={topHeight} />

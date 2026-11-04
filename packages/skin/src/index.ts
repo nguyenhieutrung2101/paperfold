@@ -8,3 +8,4 @@ export * from './meshBuilder.ts';
 export * from './frame.ts';
 export * from './reverse.ts';
 export * from './relax.ts';
+export * from './layerMap.ts';

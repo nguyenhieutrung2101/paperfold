@@ -41,6 +41,8 @@ export interface SkinParams {
   readonly softRadiusMm: number;
   /** Width of the shading groove along unfolded creases (mm). */
   readonly grooveWidthMm: number;
+  /** Free flaps rest a few degrees open at their creases' rest angles (real paper). */
+  readonly restOpen: boolean;
 }
 
 export type PaperMode = 'real' | 'ideal';
@@ -51,12 +53,13 @@ export type PaperMode = 'real' | 'ideal';
  * never z-fight.
  */
 export function skinParamsFor(paper: Paper, mode: PaperMode): SkinParams {
-  if (mode === 'ideal') return { layerGapMm: 0.02, thicknessMm: 0.02, softRadiusMm: 0, grooveWidthMm: 0.6 };
+  if (mode === 'ideal') return { layerGapMm: 0.02, thicknessMm: 0.02, softRadiusMm: 0, grooveWidthMm: 0.6, restOpen: false };
   return {
     layerGapMm: paper.thicknessMm,
     thicknessMm: paper.thicknessMm,
     softRadiusMm: 1 + 4 * paper.stiffness,
     grooveWidthMm: 0.8,
+    restOpen: true,
   };
 }
 
@@ -270,12 +273,12 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
     }
     for (let i = 0; i <= 32; i++) rhoMax = Math.max(rhoMax, rhoAt(-snap.sizeMm * 2 + (snap.sizeMm * 4 * i) / 32));
     topHeight += 2 * rhoMax;
-  } else if (relax > 0) {
-    // Relaxed folds (relax.ts): free flaps open a little about their folds.
+  } else if (relax > 0 || params.restOpen) {
+    // Free flaps rest a few degrees open (real paper), or open further when relaxed (relax.ts).
     const plan = planRelax(snap, after, gap);
     for (const f of snap.faces) {
       const h = after.get(f.id)!;
-      const t = plan.transformOf(f.id, relax);
+      const t = plan.transformOf(f.id, relax, params.restOpen);
       mappers.set(f.id, t === IDENTITY ? staticMapper(f.placement, h) : relaxedMapper(f.placement, h, t));
       topHeight = Math.max(topHeight, h);
     }

@@ -20,7 +20,8 @@ describe('stack levels', () => {
 describe('frames', () => {
   const { before, after, transition } = bookFold();
   const snap = snapshot(after);
-  const params = skinParamsFor(after.paper, 'real');
+  // Geometry checks compare with the flat resting frame (no spring-open, tested in relax.test).
+  const params = { ...skinParamsFor(after.paper, 'real'), restOpen: false };
 
   it('builds a static frame with a rounded folded edge', () => {
     const frame = buildFrame(snap, params);

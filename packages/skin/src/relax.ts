@@ -24,20 +24,28 @@ import {
  * (ADR-015 placeholders).
  */
 export interface RelaxPlan {
-  readonly flaps: ReadonlyArray<{ readonly faces: ReadonlySet<FaceId>; readonly angle: number }>;
-  /** World motion of a face at relax amount 0..1 (applied to its 3D position, height included). */
-  transformOf(face: FaceId, amount: number): Rigid3;
+  readonly flaps: ReadonlyArray<{ readonly faces: ReadonlySet<FaceId>; readonly angle: number; readonly rest: number }>;
+  /**
+   * World motion of a face (applied to its 3D position, height included). `amount` 0..1 blends
+   * from the resting spring (each crease's own rest angle, when `rest` is on) to fully relaxed.
+   * Flaps containing any face in `skip` stay put (a fold in motion owns those).
+   */
+  transformOf(face: FaceId, amount: number, rest?: boolean, skip?: ReadonlySet<FaceId>): Rigid3;
 }
 
-/** The far end of a flap rises at most this much, and nothing opens wider than this. */
+/** Relaxed: the far end of a flap rises at most this much, and nothing opens wider than this. */
 const MAX_LIFT_MM = 22;
 const MAX_ANGLE = (18 * Math.PI) / 180;
+/** Resting: a flap's own weight keeps its far end within this of the layer below. */
+const REST_LIFT_MM = 3;
 
 interface Flap {
   readonly faces: Set<FaceId>;
   readonly axisP: Vec3;
   readonly axisD: Vec3;
+  /** Signed: the sign turns the flap up. */
   readonly angle: number;
+  readonly rest: number;
 }
 
 const cache = new WeakMap<Snapshot, Map<number, RelaxPlan>>();
@@ -70,12 +78,15 @@ function build(snap: Snapshot, heights: ReadonlyMap<FaceId, number>): RelaxPlan 
     readonly left: FaceId;
     readonly right: FaceId;
     readonly folded: boolean;
+    /** How far the crease springs open from flat when nothing holds it (radians). */
+    readonly spring: number;
   }
   const edges: Edge[] = [];
   for (const c of snap.creases) {
     if (c.left === null || c.right === null) continue;
     const iso = planeIsoOf(byId.get(c.left)!.placement);
-    edges.push({ a: applyPlaneIso(iso, c.a), b: applyPlaneIso(iso, c.b), left: c.left, right: c.right, folded: Math.abs(c.angleDeg) === 180 });
+    const spring = Math.abs(c.angleDeg) === 180 ? Math.max(0, ((180 - Math.abs(c.restAngleDeg)) * Math.PI) / 180) : 0;
+    edges.push({ a: applyPlaneIso(iso, c.a), b: applyPlaneIso(iso, c.b), left: c.left, right: c.right, folded: Math.abs(c.angleDeg) === 180, spring });
   }
   const nbr = new Map<FaceId, Array<{ g: FaceId; e: Edge }>>();
   for (const e of edges) {
@@ -150,6 +161,7 @@ function build(snap: Snapshot, heights: ReadonlyMap<FaceId, number>): RelaxPlan 
     }
     if (reach < 1e-3) continue;
     const angle = Math.min(MAX_ANGLE, Math.asin(Math.min(1, MAX_LIFT_MM / reach)));
+    const rest = Math.min(e.spring, Math.asin(Math.min(1, REST_LIFT_MM / reach)));
     // The hinge: the fold line, midway between the two layers it joins.
     const h = ((heights.get(upper) ?? 0) + (heights.get(lower) ?? 0)) / 2;
     const axisP: Vec3 = [e.a[0], h, -e.a[1]];
@@ -161,7 +173,8 @@ function build(snap: Snapshot, heights: ReadonlyMap<FaceId, number>): RelaxPlan 
     }, { p: e.a as Vec2, o: -1 }).p;
     const r = rotationAbout(axisP, axisD, 0.3);
     const lifted = r.r[3] * probe[0] + r.r[4] * h + r.r[5] * -probe[1] + r.t[1];
-    flaps.push({ faces: group, axisP, axisD, angle: lifted >= h ? angle : -angle });
+    const sgn = lifted >= h ? 1 : -1;
+    flaps.push({ faces: group, axisP, axisD, angle: sgn * angle, rest: sgn * rest });
   }
 
   // Keep a nested family (each flap inside another or apart from it): larger first.
@@ -172,15 +185,18 @@ function build(snap: Snapshot, heights: ReadonlyMap<FaceId, number>): RelaxPlan 
     if (ok) kept.push(f);
   }
 
-  const transformOf = (face: FaceId, amount: number): Rigid3 => {
-    if (amount <= 0) return IDENTITY;
+  const transformOf = (face: FaceId, amount: number, rest = false, skip?: ReadonlySet<FaceId>): Rigid3 => {
+    if (amount <= 0 && !rest) return IDENTITY;
     // Inner flaps first (they turn about their own hinge), then the flaps they ride on.
     let t: Rigid3 = IDENTITY;
     for (let i = kept.length - 1; i >= 0; i--) {
       const f = kept[i]!;
-      if (f.faces.has(face)) t = compose(rotationAbout(f.axisP, f.axisD, f.angle * amount), t);
+      if (!f.faces.has(face)) continue;
+      if (skip && [...skip].some((x) => f.faces.has(x))) continue;
+      const a = (rest ? f.rest * (1 - amount) : 0) + f.angle * amount;
+      if (a !== 0) t = compose(rotationAbout(f.axisP, f.axisD, a), t);
     }
     return t;
   };
-  return { flaps: kept.map((f) => ({ faces: f.faces, angle: Math.abs(f.angle) })), transformOf };
+  return { flaps: kept.map((f) => ({ faces: f.faces, angle: Math.abs(f.angle), rest: Math.abs(f.rest) })), transformOf };
 }

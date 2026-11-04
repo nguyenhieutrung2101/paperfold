@@ -1,6 +1,8 @@
+import { useFrame } from '@react-three/fiber';
 import type { MeshData, SkinFrame } from '@paperfold/skin';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, MeshStandardMaterial } from 'three';
+import type { LayerTextures } from './layerTextures.ts';
 import { createPaperMaterial, type PaperLook } from './paperMaterial.ts';
 import { createFiberAlbedo, createFiberNormalMap } from './textures.ts';
 
@@ -29,10 +31,16 @@ export interface PaperMeshProps {
   /** Fiber texture repeats across the sheet. */
   readonly fiberRepeat?: number;
   readonly fibers?: { readonly count: number; readonly length: number };
+  /** The layer map for the state on the table (shadows, ridges, rims, counts). */
+  readonly layers?: LayerTextures | null;
+  /** How high an edge underneath presses the sheet up (mm). 0 for ideal paper. */
+  readonly ridgeMm?: number;
+  /** On the lightbox: light from below (eases in and out). */
+  readonly lightbox?: boolean;
 }
 
 /** The paper itself: one two-sided surface per face, plus visible raw-edge thickness. */
-export function PaperMesh({ frame, look, glowFaces = EMPTY, fiberRepeat = 3, fibers }: PaperMeshProps) {
+export function PaperMesh({ frame, look, glowFaces = EMPTY, fiberRepeat = 3, fibers, layers = null, ridgeMm = 0.1, lightbox = false }: PaperMeshProps) {
   const fiberCount = fibers?.count ?? 1400;
   const fiberLength = fibers?.length ?? 22;
   const textures = useMemo(() => {
@@ -54,6 +62,26 @@ export function PaperMesh({ frame, look, glowFaces = EMPTY, fiberRepeat = 3, fib
   const paper = useMemo(() => createPaperMaterial(look, textures.normal, textures.albedo), [textures]);
   useEffect(() => () => paper.dispose(), [paper]);
   useEffect(() => paper.setLook(look), [paper, look]);
+  // The layer map fades in when it arrives after a gap (a new sheet, an undo); from one state's
+  // map to the next it switches at once.
+  const layerOn = useRef(0);
+  useEffect(() => {
+    if (!layers) layerOn.current = 0;
+    paper.setLayers(layers?.a ?? null, layers?.b ?? null, layerOn.current, ridgeMm);
+  }, [paper, layers, ridgeMm]);
+  const boxed = useRef(0);
+  useEffect(() => paper.setLightbox(boxed.current), [paper]);
+  useFrame((_, dt) => {
+    if (layers && layerOn.current < 1) {
+      layerOn.current = Math.min(1, layerOn.current + dt * 6);
+      paper.setLayers(layers.a, layers.b, layerOn.current, ridgeMm);
+    }
+    const target = lightbox ? 1 : 0;
+    if (boxed.current === target) return;
+    boxed.current += (target - boxed.current) * Math.min(1, dt * 10);
+    if (Math.abs(boxed.current - target) < 0.003) boxed.current = target;
+    paper.setLightbox(boxed.current);
+  });
 
   const edgeMaterial = useMemo(
     () =>

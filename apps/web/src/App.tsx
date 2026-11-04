@@ -134,6 +134,13 @@ function SidePanel() {
         </span>
       </label>
       <label className="toggle">
+        <input type="checkbox" checked={s.lightbox} onChange={(e) => s.set({ lightbox: e.target.checked })} />
+        <span>
+          {strings.lightbox}
+          <small>{strings.lightboxHelp}</small>
+        </span>
+      </label>
+      <label className="toggle">
         <input type="checkbox" checked={s.autoCrease} onChange={(e) => s.set({ autoCrease: e.target.checked })} />
         <span>
           {strings.autoCrease}
@@ -297,10 +304,32 @@ function useKeyboard() {
       } else if (!mod && e.key.toLowerCase() === 'r') {
         const st = useStore.getState();
         st.set({ relaxed: !st.relaxed });
+      } else if (!mod && e.key.toLowerCase() === 'l' && !e.repeat) {
+        // Hold L to look; a quick tap leaves it on (and another turns it off).
+        lDownAt = performance.now();
+        useStore.getState().set({ lightboxHeld: true });
       }
     };
+    let lDownAt = 0;
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'l' || lDownAt === 0) return;
+      const st = useStore.getState();
+      const tap = performance.now() - lDownAt < 280;
+      lDownAt = 0;
+      st.set({ lightboxHeld: false, ...(tap ? { lightbox: !st.lightbox } : {}) });
+    };
+    const onBlur = () => {
+      lDownAt = 0;
+      useStore.getState().set({ lightboxHeld: false });
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 }
 

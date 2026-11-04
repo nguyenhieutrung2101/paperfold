@@ -38,6 +38,8 @@ export const strings = {
   idealPaper: 'Ideal paper',
   relaxed: 'Relaxed folds',
   relaxedHelp: 'Let the folds open a little so the layers show. R toggles.',
+  lightbox: 'Lightbox',
+  lightboxHelp: 'Light from below shows every layer. Hold L to look.',
   autoCrease: 'Auto-crease',
   autoCreaseHelp: 'Crease every fold as it lands.',
   theme: 'Theme',
@@ -132,7 +134,7 @@ export const strings = {
   labDirection: 'Direction',
 
   // Keyboard help
-  keys: 'Drag a corner to fold. Push a folded edge to tuck the tip in. Hold the button and scroll for other ways. Run along a fold to crease it. Space holds. R relaxes the folds. F turns over, Q and E rotate. K folds with the keyboard.',
+  keys: 'Drag a corner to fold. Push a folded edge to tuck the tip in. Hold the button and scroll for other ways. Run along a fold to crease it. Space holds. R relaxes the folds, L holds them up to the light. F turns over, Q and E rotate. K folds with the keyboard.',
 } as const;
 
 /** One short line per kernel reason code: what happened, then what to try. */

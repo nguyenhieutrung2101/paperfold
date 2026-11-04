@@ -135,6 +135,9 @@ export interface Paperstate {
   readonly hover: HoverView | null;
   /** Relaxed folds: free flaps spring a little open so the layers show (R). */
   readonly relaxed: boolean;
+  /** On the lightbox: light from below shows the layers (the button toggles it, L holds it). */
+  readonly lightbox: boolean;
+  readonly lightboxHeld: boolean;
   readonly peek: PeekView | null;
   /** Set while a drag is live: pick alternative i (the strip, for touch). */
   readonly choose: ((i: number) => void) | null;
@@ -192,6 +195,8 @@ export const useStore = create<Paperstate & PaperActions>((set) => ({
   preferredByZone: {},
   hover: null,
   relaxed: false,
+  lightbox: false,
+  lightboxHeld: false,
   peek: null,
   choose: null,
   handedness: 'right',

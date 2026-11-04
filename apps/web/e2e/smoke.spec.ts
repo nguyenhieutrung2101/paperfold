@@ -107,6 +107,24 @@ test('R relaxes the folds, and again presses them flat', async ({ page }) => {
   await expect(relaxed).not.toBeChecked();
 });
 
+test('L holds the model up to the light; a quick tap leaves it on', async ({ page }) => {
+  await dragMm(page, [75, -75], [-75, 75]);
+  await expect(steps(page)).toHaveCount(2);
+  const box = page.getByLabel('Lightbox');
+  const held = () => page.evaluate(() => (window as unknown as { __paperfold: { useStore: { getState(): { lightboxHeld: boolean } } } }).__paperfold.useStore.getState().lightboxHeld);
+  await expect(box).not.toBeChecked();
+  await page.keyboard.down('l');
+  await expect.poll(held).toBe(true);
+  await page.waitForTimeout(600);
+  await page.keyboard.up('l');
+  await expect.poll(held).toBe(false);
+  await expect(box).not.toBeChecked();
+  await page.keyboard.press('l');
+  await expect(box).toBeChecked();
+  await page.keyboard.press('l');
+  await expect(box).not.toBeChecked();
+});
+
 test('a top layer joined at the spine: the strip offers both layers', async ({ page }) => {
   // Book fold: right edge over to the left edge.
   await dragMm(page, [75, 0], [-75, 0]);

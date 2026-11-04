@@ -8,7 +8,9 @@ push in and pull out). After the second review, two more fixes are in: reverse f
 tear mid-animation (ADR-039), and common folds snap from well away with visible targets (ADR-040).
 After the third review: corner presses grab the corner itself so a blintz meets exactly in the middle
 (ADR-041), and **Relaxed folds** (R) lets free flaps spring open so the layers show (ADR-042). Plan 2
-is next.
+is built as the first part of Phase 2 (ADR-043): flaps rest a few degrees open, contact shadows,
+rounded folded edges, ridges of hidden edges, the lightbox (L), and a lower camera and key light.
+Before and after: `images/phase2-readability.png`.
 
 1. **Say what you mean with a mouse.** Grabbing a corner or an edge should do what you meant, and
    you should see what that will be before and during the drag.

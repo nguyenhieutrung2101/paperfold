@@ -26,8 +26,8 @@ function plan(snap: Snapshot) {
   return planRelax(snap, faceHeights(snap, gap), gap);
 }
 
-function worstGap(snap: Snapshot, relax: number): number {
-  const params = skinParamsFor(snap.paper, 'real');
+function worstGap(snap: Snapshot, relax: number, rest = false): number {
+  const params = { ...skinParamsFor(snap.paper, 'real'), restOpen: rest };
   let worst = 0;
   for (const c of snap.creases) {
     if (c.left === null || c.right === null) continue;
@@ -41,8 +41,8 @@ function worstGap(snap: Snapshot, relax: number): number {
   return worst;
 }
 
-const highest = (snap: Snapshot, relax: number) => {
-  const params = skinParamsFor(snap.paper, 'real');
+const highest = (snap: Snapshot, relax: number, rest = false) => {
+  const params = { ...skinParamsFor(snap.paper, 'real'), restOpen: rest };
   let top = 0;
   for (const f of snap.faces) for (const p of f.material) top = Math.max(top, skinPoint(snap, params, f.id, p, undefined, relax)[1]);
   return top;
@@ -70,6 +70,17 @@ describe('relaxed folds', () => {
     // Only the outermost corner layer is free; the triangle's top layer is wrapped by it.
     expect(p.flaps).toHaveLength(1);
     expect(worstGap(snap, 1)).toBeLessThan(1);
+  });
+
+  it('real paper rests a few degrees open: a free flap at its crease rest angle, at most about 3 mm up', () => {
+    const creased = must(triangle, { type: 'burnish', params: { line: { p: [0, 0], d: [1, 1] }, amount: 1 } });
+    const snap = snapshot(creased);
+    const resting = highest(snap, 0, true);
+    expect(resting).toBeGreaterThan(0.5);
+    expect(resting).toBeLessThan(3.6);
+    expect(worstGap(snap, 0, true)).toBeLessThan(1);
+    // Ideal paper (and the flat frame) don't spring open.
+    expect(highest(snap, 0, false)).toBeLessThan(1);
   });
 
   it('halfway is halfway', () => {

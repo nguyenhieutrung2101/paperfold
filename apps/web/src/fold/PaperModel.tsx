@@ -1,10 +1,12 @@
 import { useFrame } from '@react-three/fiber';
 import { PaperMesh, type PaperLook } from '@paperfold/render';
 import { buildFrame, type SkinFrame, skinParamsFor } from '@paperfold/skin';
-import { useMemo, useRef, useState } from 'react';
+import type { Snapshot } from '@paperfold/kernel';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type Group, Matrix4, Vector3 } from 'three';
 import { PRESETS } from '../presets.ts';
 import { type PeekView, useStore } from '../store.ts';
+import { LayerMaps } from './layerMaps.ts';
 import { foldPose, reducedMotion } from './motion.ts';
 
 /** The angle the live drag was showing, so a committed fold lands from there. */
@@ -14,6 +16,14 @@ const TURN_MS = 620;
 /** How far a hovered corner curls up (radians). */
 const PEEK_THETA = 0.85;
 const ROTATE_MS = 360;
+
+/** Layer maps for recent states; re-renders when one arrives. */
+function useLayerMaps(): LayerMaps {
+  const [, setVersion] = useState(0);
+  const [maps] = useState(() => new LayerMaps(() => setVersion((v) => v + 1)));
+  useEffect(() => () => maps.dispose(), [maps]);
+  return maps;
+}
 
 /**
  * The folded model. Each frame it asks the skin for geometry: static when nothing moves,
@@ -28,8 +38,17 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
   const preset = useStore((s) => s.preset);
   const frontColor = useStore((s) => s.frontColor);
   const backColor = useStore((s) => s.backColor);
+  const lightbox = useStore((s) => s.lightbox || s.lightboxHeld);
   const group = useRef<Group>(null);
   const snap = view?.snapshot ?? null;
+  // The layer map shows the state on the table: while a fold lands, the state it left (the
+  // flap's shadow appears when it touches down).
+  const layerMaps = useLayerMaps();
+  const [layerSnap, setLayerSnap] = useState<Snapshot | null>(null);
+  // Start on the new state's map as soon as it's committed: it's ready by the time the fold lands.
+  useEffect(() => {
+    if (snap) layerMaps.request(snap);
+  }, [layerMaps, snap]);
 
   const params = useMemo(() => (snap ? skinParamsFor(snap.paper, paperMode) : null), [snap, paperMode]);
   const staticFrame = useMemo(() => (snap && params ? buildFrame(snap, params) : null), [snap, params]);
@@ -68,6 +87,10 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
     // paper presses flat while you hold it or a fold is landing, then breathes out again.
     const { relaxed, hover } = useStore.getState();
     const pose = snap && params && active ? foldPose(active, snap, now, paperMode, creaseOverlay) : null;
+    const resting = pose?.animating && pose.motion ? pose.motion.before : snap;
+    // While the model turns over, keep the old map: it describes the side that's still up.
+    const turning = modelMotion?.transition.kind === 'turnOver' && !reducedMotion() && now - modelMotion.startedAt < TURN_MS;
+    if (!turning && resting !== layerSnap) setLayerSnap(resting);
     const relaxTarget = relaxed && !drag && !hover?.pressed && !(pose?.animating ?? false) ? 1 : 0;
     relaxAmt.current = reducedMotion() ? relaxTarget : relaxAmt.current + (relaxTarget - relaxAmt.current) * Math.min(1, dt * (relaxTarget > relaxAmt.current ? 5 : 12));
     if (Math.abs(relaxAmt.current - relaxTarget) < 0.002) relaxAmt.current = relaxTarget;
@@ -151,10 +174,20 @@ export function PaperModel({ onTopHeight }: { readonly onTopHeight?: (h: number)
   // a pointer aimed at a corner must land on that corner whatever the flap is doing.
   if (staticFrame) onTopHeight?.(staticFrame.topHeight);
   const frame = moving?.frame ?? staticFrame;
+  const shownLayers = layerSnap ?? snap;
+  const layers = shownLayers ? layerMaps.get(shownLayers) : null;
   if (!frame) return null;
   return (
     <group ref={group}>
-      <PaperMesh frame={frame} look={look} glowFaces={glow} fibers={p.fibers} />
+      <PaperMesh
+        frame={frame}
+        look={look}
+        glowFaces={glow}
+        fibers={p.fibers}
+        layers={layers}
+        ridgeMm={paperMode === 'ideal' ? 0 : 0.1}
+        lightbox={lightbox}
+      />
     </group>
   );
 }
