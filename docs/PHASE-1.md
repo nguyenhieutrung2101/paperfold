@@ -174,11 +174,11 @@ with full checks.
   didn't finish. The kernel is still flat-only (ADR-003). While you drag, the paper shows any angle,
   but letting go always lands it flat. Committing a fold at 90° needs non-flat placements and a
   swept-volume collision check (ADR-035). It moves to the top of Phase 2.
-- **Reverse-fold motion is approximate** (labeled in `skin/src/frame.ts`). The flap's top side swings
-  open rigidly about the spine, up to 95°, and closes over the tip. Real paper opens a little and
-  flexes the tip through (degree-4 kinematics with bending). The tip turns on a sharp hinge, so an
-  uncreased reverse fold looks creased: a soft loop would float the tip through the flap that closes
-  over it. Phase 2's per-region heights can draw the bulge.
+- **Reverse-fold motion** (ADR-039, replacing the Phase 1 version that tore mid-motion): the exact rigid
+  degree-4 motion (the flap opens flat, then refolds with the tip reversed), or a one-piece swing
+  that tucks the tip in as it lands when the flap is locked. Real paper opens a little and flexes
+  instead (Phase 2, with bending). The tip turns on a sharp hinge, so an uncreased reverse fold looks
+  creased.
 - **Only the latest fold shows softness.** Older uncreased folds are drawn as if creased (unchanged
   from Phase 0).
 - **Thickness fillets add ≈π·r of paper per folded edge; the partial-crease blend is not

@@ -5,7 +5,7 @@ import {
   type Snapshot,
   type Span,
 } from '@paperfold/kernel';
-import { type FoldMotion, type MotionTransition, type PaperMode, reverseOpening } from '@paperfold/skin';
+import { type FoldMotion, type MotionTransition, type PaperMode } from '@paperfold/skin';
 import type { CreaseOverlay } from '../store.ts';
 import type { ActiveFold } from '../store.ts';
 
@@ -157,14 +157,13 @@ export function foldPose(
 
   let theta: number;
   let animating = true;
-  let opening = 0;
   // From a live drag the paper is already most of the way over: land from there.
   const from = clamp01((active.fromTheta ?? 0) / Math.PI) * Math.PI;
-  const foldMs = TIMING.fold * k * Math.max(0.25, (Math.PI - from) / Math.PI);
+  // A reverse fold opens the flap and refolds it: give it a little longer.
+  const foldMs = TIMING.fold * (reverse ? 1.7 : 1) * k * Math.max(0.25, (Math.PI - from) / Math.PI);
   if (t < foldMs) {
     const e = from > 0 ? easeOut(clamp01(t / foldMs)) : easeInOut(clamp01(t / foldMs));
     theta = from + (Math.PI - from) * e;
-    if (reverse) opening = reverseOpening(theta / Math.PI);
   } else if (t < foldMs + TIMING.settle * k) {
     const s = easeOut(clamp01((t - foldMs) / (TIMING.settle * k)));
     theta = Math.PI + (restTheta - Math.PI) * s;
@@ -194,7 +193,7 @@ export function foldPose(
   }
 
   return {
-    motion: { before: active.before, transition: active.transition, theta, sharpnessAt, opening },
+    motion: { before: active.before, transition: active.transition, theta, sharpnessAt },
     animating,
   };
 }

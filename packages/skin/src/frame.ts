@@ -1,6 +1,6 @@
 import {
   add3,
-  apply,
+  compose,
   applyMaterial,
   applyPlaneIso,
   clipHalfPlane,
@@ -16,7 +16,6 @@ import {
   planeDirToWorld,
   planeIsoOf,
   type Rigid3,
-  rotationAbout,
   scale3,
   type Snapshot,
   type SnapshotCrease,
@@ -28,6 +27,7 @@ import {
 import { type BendLayer, bendPoint, bendTangent } from './bend.ts';
 import { faceHeights } from './heights.ts';
 import { type MeshData, MeshBuilder } from './meshBuilder.ts';
+import { planReverse } from './reverse.ts';
 
 export interface SkinParams {
   /** Visual gap between stacked layers (mm). For real paper: its thickness. */
@@ -70,11 +70,6 @@ export interface FoldMotion {
   readonly theta: number;
   /** Crease sharpness 0..1 at coordinate u along transition.line. */
   readonly sharpnessAt: (u: number) => number;
-  /**
-   * Reverse folds: how far the flap's top side is open (radians). Defaults to the opening for
-   * a swing at this theta; pass 0 once the fold has landed.
-   */
-  readonly opening?: number;
 }
 
 export interface SkinFrame {
@@ -179,47 +174,20 @@ function bendMapper(
   };
 }
 
-/**
- * A stationary face swung about a hinge on the table (the flap opening to let a reverse
- * fold's tip in). The face's own side of the hinge goes up.
- */
-function liftMapper(base: FaceMapper, material: readonly Vec2[], hinge: Line2, angle: number): FaceMapper {
-  if (angle === 0) return base;
-  const c = centroidOf(material.map((p) => base.pos(p)));
-  const axisDir = planeDirToWorld(hinge.d);
-  const axisPoint: Vec3 = [hinge.p[0], c[1], -hinge.p[1]];
-  const v = sub3(c, axisPoint);
-  const up = cross3(axisDir, v)[1];
-  const rot = rotationAbout(axisPoint, axisDir, up >= 0 ? angle : -angle);
-  const rotOnly: Rigid3 = { r: rot.r, t: [0, 0, 0] };
+/** A face moved rigidly in 3D (reverse folds), raised by `height` above the table. */
+function rigidMapper(tr: Rigid3, height: number, moving: boolean): FaceMapper {
+  const n: Vec3 = [tr.r[2], tr.r[5], tr.r[8]];
   return {
-    moving: true,
-    pos: (p) => apply(rot, base.pos(p)),
-    normal: (p) => apply(rotOnly, base.normal(p)),
+    moving,
+    pos: (p) => {
+      const w = applyMaterial(tr, p);
+      return [w[0], w[1] + height, w[2]];
+    },
+    normal: () => n,
   };
 }
 
-function centroidOf(pts: readonly Vec3[]): Vec3 {
-  let x = 0;
-  let y = 0;
-  let z = 0;
-  for (const p of pts) {
-    x += p[0];
-    y += p[1];
-    z += p[2];
-  }
-  return [x / pts.length, y / pts.length, z / pts.length];
-}
-
-/**
- * How far the flap's top side opens during an inside reverse fold (radians), at fold
- * progress k (0..1). APPROXIMATION: real paper opens a little and flexes the tip through;
- * a rigid tip needs the flap fully open (degree-4 kinematics), so we open it wide enough to
- * read clearly, then close it over the tip.
- */
-export function reverseOpening(k: number): number {
-  return ((95 * Math.PI) / 180) * Math.sin(Math.PI * Math.min(1, Math.max(0, k)));
-}
+const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
 const normalize3 = (v: Vec3): Vec3 => {
   const l = len3(v) || 1;
@@ -263,25 +231,24 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion) {
     let rhoPin = Infinity;
     for (let i = 0; i <= 256; i++) rhoPin = Math.min(rhoPin, rhoAt(-snap.sizeMm * 2 + (snap.sizeMm * 4 * i) / 256));
     const blend = Math.max(12, 4 * params.softRadiusMm);
-    // Reverse folds: outside sends the bottom side's tip under; inside opens the flap's top
-    // side about the spine while the tip swings into the gap.
-    const under = new Set(tr.kind === 'reverse' && tr.reverse === 'outside' ? tr.bottom : []);
-    const lifted = new Set(tr.kind === 'reverse' && tr.reverse === 'inside' ? tr.flapTop : []);
-    const opening = tr.kind === 'reverse' ? (motion.opening ?? reverseOpening(k)) : 0;
+    // Reverse folds move rigidly and never tear (reverse.ts): the flap opens flat and refolds
+    // along the degree-4 motion, or, when it can't open, the tip swings over in one piece.
+    const plan = tr.kind === 'reverse' ? planReverse(snap, tr) : null;
+    const lift = plan ? plan.lift(k) : 0;
     for (const f of snap.faces) {
       const parent = tr.parentOf.get(f.id) ?? f.id;
       const h1 = after.get(f.id)!;
       const h0 = before.get(parent) ?? h1;
       const start = tr.startPlacements.get(f.id) ?? f.placement;
-      if (moving.has(f.id)) {
-        const sigma: 1 | -1 = tr.kind === 'fold' ? tr.direction : under.has(f.id) ? -1 : 1;
-        mappers.set(f.id, bendMapper(start, tr.line, { h0, h1, sigma }, motion.theta, rhoAt, rhoPin, blend));
-      } else if (lifted.has(f.id) && tr.kind === 'reverse') {
-        mappers.set(f.id, liftMapper(staticMapper(start, h0 + (h1 - h0) * k), f.material, tr.spine, opening));
+      if (plan) {
+        const h = h0 + (h1 - h0) * ease(k) + lift;
+        mappers.set(f.id, rigidMapper(compose(plan.pose(f.id, k), start), h, plan.moves.has(f.id)));
+      } else if (moving.has(f.id) && tr.kind === 'fold') {
+        mappers.set(f.id, bendMapper(start, tr.line, { h0, h1, sigma: tr.direction }, motion.theta, rhoAt, rhoPin, blend));
       } else {
         mappers.set(f.id, staticMapper(start, h0 + (h1 - h0) * k));
       }
-      topHeight = Math.max(topHeight, h0, h1);
+      topHeight = Math.max(topHeight, h0 + lift, h1 + lift);
     }
     for (let i = 0; i <= 32; i++) rhoMax = Math.max(rhoMax, rhoAt(-snap.sizeMm * 2 + (snap.sizeMm * 4 * i) / 32));
     topHeight += 2 * rhoMax;

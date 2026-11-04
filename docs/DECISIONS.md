@@ -242,7 +242,7 @@ blocking layers glowing. A second refusal for the same reason within 30 s adds o
 pointer. When another reading of the drag is possible (more layers, a reverse fold) it is offered
 instead of a refusal: the chip says "Fold both layers" rather than refusing `joined`.
 
-## ADR-033 · Reverse-fold motion in the skin (approximation)
+## ADR-033 · Reverse-fold motion in the skin (approximation; superseded by ADR-039)
 
 **Chose** to animate the kernel's exact half-turn for the tip while the flap's top side swings open
 rigidly about the spine, up to 95° (`reverseOpening(k) = 95°·sin(πk)`), and closes again. For outside
@@ -320,3 +320,30 @@ behavior).
 - **Kernel:** a crease that changes nothing is refused (`unchanged`), so it can't add an empty
   timeline step. Recognition calls any sharpening a crease, not just one that raises the fold's
   sharpest point.
+
+## ADR-039 · Reverse folds move rigidly, without tearing
+
+**Problem.** The Phase 1 motion opened the flap's top side rigidly about the spine while the tip
+swung about its own hinge. The tip is attached to that side along the reverse-fold line, so the two
+pulled apart mid-motion (up to about 70 mm on a 150 mm sheet). The strips that join every crease
+stretched across the gap into a visible tube. It was worse when a folded-back flap was attached to
+the opening side. The landed state was right, which is why the Phase 1 checks (at rest) missed it.
+
+**Chose** (`skin/src/reverse.ts`) the true rigid motion where it exists, a one-piece swing where it
+doesn't:
+
+- **The degree-4 motion.** The vertex at P has four creases: the body's spine, the tip's spine and
+  the reverse-fold line on each side. Its rigid motion from "tip outside" to "tip reversed" passes
+  through the unfolded state. So the flap's top side (its layers, the tip layers on it, and
+  everything joined to them) first swings open flat about the spine. Then it closes while each tip
+  layer turns about its own hinge, solved in closed form: the tip's spine lies at the sector angle α
+  from both hinges, on the intersection of two cones. The inside branch goes up into the opening.
+  The outside branch wraps under, so the model rises just enough to keep the tip off the table.
+- **The swing.** When the top side can't open, because it's joined to the bottom side elsewhere or
+  something of the bottom side lies over it (a corner folded over both layers), both tip layers swing
+  over as one piece and tuck in as they land. APPROXIMATION: real paper opens locally and flexes;
+  bending is Phase 2.
+
+**Tested** on every reverse-fold fixture (inside and outside, nested, precreased, and a corner folded
+over both layers): every crease stays joined within the layer gaps at 47 points of the motion, and
+the landing matches the static frame exactly.
