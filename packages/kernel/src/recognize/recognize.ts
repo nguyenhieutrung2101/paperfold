@@ -14,6 +14,9 @@ export type MoveName =
   | 'outside-reverse-fold'
   | 'squash-fold'
   | 'petal-fold'
+  | 'pleat'
+  | 'inside-crimp'
+  | 'outside-crimp'
   | 'crease'
   | 'turn-over'
   | 'rotate'
@@ -142,7 +145,10 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
     let inside = 0;
     let outside = 0;
     let odd = 0;
+    // Per flipped crease: its reverse-fold ends, and whether the paper past each stayed put.
+    let crimp: 'inside' | 'outside' | null = null;
     for (const f of flipped) {
+      const ends: Array<{ kind: 'inside' | 'outside'; still: boolean }> = [];
       for (const v of f.seg.v) {
         const around = (adj.vertexEdges.get(v) ?? []).filter((e) => after.cp.creases.get(e)!.angleDeg !== 0);
         const news = around.filter((e) => madeIds.has(e));
@@ -151,17 +157,30 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
         if (spineIn === undefined) continue;
         const a = Math.sign(after.cp.creases.get(spineIn)!.angleDeg);
         const signs = news.map((e) => Math.sign(after.cp.creases.get(e)!.angleDeg));
-        if (signs[0] !== signs[1] || Math.sign(f.seg.angle) !== -a) odd++;
-        else if (signs[0] === a) inside++;
+        if (signs[0] !== signs[1] || Math.sign(f.seg.angle) !== -a) {
+          odd++;
+          continue;
+        }
+        const kind = signs[0] === a ? 'inside' : 'outside';
+        if (kind === 'inside') inside++;
         else outside++;
+        const ef = adj.edgeFaces.get(spineIn)!;
+        ends.push({ kind, still: ef.left !== null && !movedFace(before, after, ef.left, tol) });
       }
+      // A crimp: a stretch of folded edge flips between two reverse folds, one of each kind; it
+      // is named by the one next to the paper that stayed.
+      if (ends.length === 2 && ends[0]!.kind !== ends[1]!.kind) crimp = (ends.find((e) => e.still) ?? ends[0]!).kind;
     }
+    if (crimp && odd === 0) return { name: crimp === 'inside' ? 'inside-crimp' : 'outside-crimp', confidence: 0.85 };
     if (inside > 0 && outside === 0 && odd === 0) return { name: 'inside-reverse-fold', confidence: 0.92 };
     if (outside > 0 && inside === 0 && odd === 0) return { name: 'outside-reverse-fold', confidence: 0.92 };
     return { name: 'fold', confidence: 0.3 };
   }
 
   if (made.length > 0 && flipped.length === 0 && unfolded.length === 0) {
+    // A pleat: two parts moved, one turned over and one not (it went over twice).
+    const motions = movedMotions(before, after, tol);
+    if (motions.length === 2 && motions.filter((m) => m.flips).length === 1) return { name: 'pleat', confidence: 0.85 };
     // A plain fold: which way did the moving part go, as seen by the viewer?
     for (const m of made) {
       const { left, right } = m.seg;
@@ -198,6 +217,24 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
 
   if (unfolded.length > 0 && made.length === 0 && flipped.length === 0) return { name: 'unfold', confidence: 0.9 };
   return { name: 'fold', confidence: 0.3 };
+}
+
+/** The distinct rigid motions the faces that moved went through (world, before to after). */
+function movedMotions(before: KernelState, after: KernelState, tol: number): Array<{ w: Rigid3; flips: boolean }> {
+  const out: Array<{ w: Rigid3; flips: boolean }> = [];
+  const identity: Rigid3 = { r: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] };
+  for (const f of after.cp.faces.keys()) {
+    const c = centroid(materialPolygon(after.cp, f));
+    for (const g of before.cp.faces.keys()) {
+      if (!containsStrictly(materialPolygon(before.cp, g), c, before.tol)) continue;
+      const a = before.folded.placements.get(g)!;
+      const b = after.folded.placements.get(f)!;
+      const w = relative(a, b);
+      if (!close(w, identity, tol) && !out.some((o) => close(o.w, w, tol))) out.push({ w, flips: frontUp(a) !== frontUp(b) });
+      break;
+    }
+  }
+  return out;
 }
 
 /** Did this face of `after` move? Compared with the old face that held its material. */

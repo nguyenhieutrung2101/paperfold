@@ -1,4 +1,5 @@
 import {
+  compose,
   cross3,
   dot3,
   type FaceId,
@@ -14,6 +15,7 @@ import type { ReversePlan } from './reverse.ts';
 
 export type SquashTransition = Extract<Transition, { kind: 'squash' }>;
 export type PetalTransition = Extract<Transition, { kind: 'petal' }>;
+export type ZigzagTransition = Extract<Transition, { kind: 'pleat' | 'crimp' }>;
 
 /**
  * How squash and petal folds move (Phase 2), without tearing: every part turns rigidly, and the
@@ -31,6 +33,14 @@ export type PetalTransition = Extract<Transition, { kind: 'petal' }>;
  * the petal and its outer edge where it meets the inner side. ψ solves the side's one condition
  * (the angle between those two creases stays as it is in the paper): a spherical four-bar,
  * closed form.
+ *
+ * **Pleat and crimp.** The strip between the lines lifts over the first line (φ from 0 to π),
+ * and the part past the second turns back about the second line by the same φ, in the strip's
+ * frame: two hinges in a zigzag, joined at every moment.
+ *
+ * APPROXIMATION: a crimp's two sides move together, like a pleat of the whole flap; the strip
+ * and the far part end between (inside) or around (outside) the flap's layers by sliding to
+ * their heights as they land, where real paper opens the flap a little to let them in.
  */
 export type MultiPlan = ReversePlan;
 
@@ -177,5 +187,32 @@ export function planPetal(tr: PetalTransition): MultiPlan {
   };
   const plan: MultiPlan = { mode: 'kinematic', moves: new Set(groups.keys()), pose, lift: () => 0 };
   petalCache.set(tr, plan);
+  return plan;
+}
+
+const zigzagCache = new WeakMap<ZigzagTransition, MultiPlan>();
+
+export function planZigzag(tr: ZigzagTransition): MultiPlan {
+  const hit = zigzagCache.get(tr);
+  if (hit) return hit;
+  // Both lines have the part that moves on their left.
+  const axis = (l: ZigzagTransition['first']) => ({
+    o: planeToWorld(l.p),
+    d: norm(planeDirToWorld(l.d)),
+    left: norm(planeDirToWorld([-l.d[1], l.d[0]])),
+  });
+  const a = axis(tr.first);
+  const b = axis(tr.second);
+  const middle = new Set(tr.middle);
+  const far = new Set(tr.far);
+  const strip = (phi: number) => lift(a.o, a.d, a.left, phi);
+  const pose = (f: FaceId, k: number): Rigid3 => {
+    const phi = Math.PI * ease(k);
+    if (middle.has(f)) return strip(phi);
+    if (far.has(f)) return compose(strip(phi), lift(b.o, b.d, b.left, -phi));
+    return IDENTITY;
+  };
+  const plan: MultiPlan = { mode: 'kinematic', moves: new Set([...middle, ...far]), pose, lift: () => 0 };
+  zigzagCache.set(tr, plan);
   return plan;
 }

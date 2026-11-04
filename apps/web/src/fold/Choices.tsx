@@ -36,6 +36,27 @@ export function MovePicture({ kind, layers }: { readonly kind: PictureKind; read
       </svg>
     );
   }
+  if (kind === 'pleat') {
+    // A strip folded under and the part beyond laid back over it: a zigzag edge-on.
+    return (
+      <svg viewBox="0 0 40 40" className="move-picture" aria-hidden="true">
+        <polygon points="4,12 22,12 22,30 4,30" {...sheet} />
+        <polygon points="16,12 22,12 22,30 16,30" fill="var(--paper-under)" stroke="var(--text)" strokeWidth={1.4} strokeLinejoin="round" />
+        <polygon points="16,12 34,12 34,30 16,30" {...moved} />
+        <line x1="16" y1="12" x2="16" y2="30" stroke="var(--text)" strokeWidth={1} strokeDasharray="2.5 1.5" />
+      </svg>
+    );
+  }
+  if (kind === 'inside-crimp' || kind === 'outside-crimp') {
+    // A flap with its tip kinked down at two lines; inside, the strip is dashed (tucked in).
+    return (
+      <svg viewBox="0 0 40 40" className="move-picture" aria-hidden="true">
+        <polygon points="4,10 20,10 20,22 4,22" {...sheet} />
+        <polygon points="20,10 24,14 22,25 18,22" {...moved} strokeDasharray={kind === 'inside-crimp' ? '2 1.5' : undefined} />
+        <polygon points="24,14 36,32 30,35 22,25" {...moved} />
+      </svg>
+    );
+  }
   if (kind === 'petal') {
     // The bottom point lifted up on a hinge, the sides folded in under it.
     return (

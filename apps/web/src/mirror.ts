@@ -76,6 +76,12 @@ export function mirrorMove(move: Move, ax: Line2): Move | null {
       if (sameLine(hinge, move.params.hinge)) return null;
       return { type: move.type, params: { ...move.params, hinge, seed: reflect(ax, move.params.seed), holds: pts(move.params.holds) } } as Move;
     }
+    case 'pleat':
+    case 'crimp': {
+      const first = mirrorLine(ax, move.params.first);
+      if (sameLine(first, move.params.first)) return null;
+      return { type: move.type, params: { ...move.params, first, second: mirrorLine(ax, move.params.second), seed: reflect(ax, move.params.seed), holds: pts(move.params.holds) } } as Move;
+    }
     default:
       return null;
   }

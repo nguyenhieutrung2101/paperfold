@@ -54,6 +54,25 @@ export interface PetalParams {
   readonly holds?: readonly Vec2[];
 }
 
+export interface PleatParams {
+  /** The valley line (first), and the mountain line (second), on the table plane. */
+  readonly first: PlaneLine;
+  readonly second: PlaneLine;
+  /** A point past the second line (on the part that ends up on top). */
+  readonly seed: Vec2;
+  readonly layers?: number | 'all';
+  readonly holds?: readonly Vec2[];
+}
+
+export interface CrimpParams {
+  /** Two lines across a closed flap; the seed is past the second. */
+  readonly first: PlaneLine;
+  readonly second: PlaneLine;
+  readonly seed: Vec2;
+  readonly kind?: 'inside' | 'outside';
+  readonly holds?: readonly Vec2[];
+}
+
 export interface BurnishParams {
   /** The folded edge to crease, as a line on the table plane. */
   readonly line: PlaneLine;
@@ -79,6 +98,8 @@ export type Move =
   | { readonly type: 'reverseFold'; readonly params: ReverseFoldParams }
   | { readonly type: 'squash'; readonly params: SquashParams }
   | { readonly type: 'petal'; readonly params: PetalParams }
+  | { readonly type: 'pleat'; readonly params: PleatParams }
+  | { readonly type: 'crimp'; readonly params: CrimpParams }
   | { readonly type: 'burnish'; readonly params: BurnishParams }
   | { readonly type: 'turnOver'; readonly params: TurnOverParams }
   | { readonly type: 'rotate'; readonly params: RotateParams };
@@ -202,6 +223,26 @@ export type Transition =
       /** The layers under the sides (fold in on the kite lines). */
       readonly innerX: readonly FaceId[];
       readonly innerY: readonly FaceId[];
+      readonly parentOf: ReadonlyMap<FaceId, FaceId>;
+      readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
+      readonly newCreases: readonly EdgeId[];
+    }
+  | {
+      /**
+       * A pleat (two folds made as one step), or a crimp (both sides of a flap pleated at
+       * once). The strip between the lines turns over the first; the part past the second turns
+       * over both.
+       */
+      readonly kind: 'pleat' | 'crimp';
+      /** Crimps only. */
+      readonly reverse?: 'inside' | 'outside';
+      /** The two lines (table plane, before the move), each with the part that moves on its left. */
+      readonly first: Line2;
+      readonly second: Line2;
+      readonly moving: readonly FaceId[];
+      /** The strip between the lines (turns over the first), and the part past the second. */
+      readonly middle: readonly FaceId[];
+      readonly far: readonly FaceId[];
       readonly parentOf: ReadonlyMap<FaceId, FaceId>;
       readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
       readonly newCreases: readonly EdgeId[];

@@ -221,12 +221,12 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
     };
 
     /**
-     * A squash doesn't turn about the drag's line: how far along it is comes from how far the
-     * pressed point has gone toward where the squash puts it.
+     * A squash, petal, pleat or crimp doesn't take the pressed point across the drag's line: how
+     * far along it is comes from how far the point has gone toward where the move puts it.
      */
     const squashTurn = (gg: Gesture): boolean => {
       const pv = gg.result?.preview;
-      if (gg.stage !== 'grab' || !pv || (pv.transition.kind !== 'squash' && pv.transition.kind !== 'petal') || !pv.landing) return false;
+      if (gg.stage !== 'grab' || !pv || pv.transition.kind === 'fold' || pv.transition.kind === 'reverse' || !pv.landing) return false;
       const dx = pv.landing[0] - gg.start[0];
       const dy = pv.landing[1] - gg.start[1];
       const len2 = dx * dx + dy * dy;

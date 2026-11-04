@@ -1,6 +1,16 @@
 import type { Line2, Move, Vec2 } from '@paperfold/kernel';
 
-export type CandidateKind = 'fold-top' | 'fold-layers' | 'fold-all' | 'inside-reverse' | 'outside-reverse' | 'squash' | 'petal';
+export type CandidateKind =
+  | 'fold-top'
+  | 'fold-layers'
+  | 'fold-all'
+  | 'inside-reverse'
+  | 'outside-reverse'
+  | 'squash'
+  | 'petal'
+  | 'pleat'
+  | 'inside-crimp'
+  | 'outside-crimp';
 
 export interface Candidate {
   readonly kind: CandidateKind;
@@ -22,6 +32,11 @@ export interface CandidateOptions {
    * flap's own hinge, not on the drag's line). None: no squash candidates.
    */
   readonly squashHinges?: readonly Line2[];
+  /**
+   * Where a pleat or crimp along this drag would fold back (a line past the drag's line, on
+   * the side that moves, usually a precrease). None: no pleat or crimp candidates.
+   */
+  readonly secondLine?: Line2;
 }
 
 /**
@@ -58,6 +73,15 @@ export function candidateMoves(o: CandidateOptions): Candidate[] {
       });
     }
   }
+  if (o.secondLine) {
+    const second = { p: o.secondLine.p, d: o.secondLine.d };
+    out.push({ kind: 'pleat', layers: o.layersAtSeed, move: { type: 'pleat', params: { first: line, second, seed: o.seed, layers: 'all', holds } } });
+    if (o.layersAtSeed > 1) {
+      for (const kind of ['inside', 'outside'] as const) {
+        out.push({ kind: kind === 'inside' ? 'inside-crimp' : 'outside-crimp', layers: o.layersAtSeed, move: { type: 'crimp', params: { first: line, second, seed: o.seed, kind, holds } } });
+      }
+    }
+  }
   return out;
 }
 
@@ -92,6 +116,9 @@ export function orderCandidates<T extends { readonly candidate: Candidate; reado
     const base = 100;
     if (c.kind === 'petal') return base + (k === 1 ? 0.5 : 500);
     if (c.kind === 'squash') return base + 600 + c.layers;
+    if (c.kind === 'pleat') return base + 700;
+    if (c.kind === 'inside-crimp') return base + 950;
+    if (c.kind === 'outside-crimp') return base + 951;
     if (c.kind === 'inside-reverse') return base + 900;
     if (c.kind === 'outside-reverse') return base + 901;
     if (opts.allLayers) return base + (c.kind === 'fold-all' ? 0 : 500 - c.layers);

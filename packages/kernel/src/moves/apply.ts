@@ -2,6 +2,7 @@ import type { KernelState } from '../state/types.ts';
 import { burnish } from './burnish.ts';
 import { fold } from './fold.ts';
 import { petalFold } from './petal.ts';
+import { crimpFold, pleatFold } from './pleat.ts';
 import { reverseFold } from './reverse.ts';
 import { squashFold } from './squash.ts';
 import { rotate, turnOver } from './turn.ts';
@@ -18,6 +19,10 @@ export function applyMove(state: KernelState, move: Move): MoveResult {
       return squashFold(state, move.params);
     case 'petal':
       return petalFold(state, move.params);
+    case 'pleat':
+      return pleatFold(state, move.params);
+    case 'crimp':
+      return crimpFold(state, move.params);
     case 'burnish':
       return burnish(state, move.params);
     case 'turnOver':

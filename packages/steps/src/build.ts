@@ -154,6 +154,10 @@ function kindOf(log: DesignLog, i: number): StepKind {
       return 'squash';
     case 'petal':
       return 'petal';
+    case 'pleat':
+      return 'pleat';
+    case 'crimp':
+      return 'crimp';
     case 'burnish':
       return 'crease';
     case 'turnOver':
@@ -167,7 +171,7 @@ function kindOf(log: DesignLog, i: number): StepKind {
 
 /** Outlines (table plane, before the move) of the faces a fold or reverse fold moves. */
 function movingOutlines(after: KernelState, tr: Transition): Array<{ face: FaceId; poly: Vec2[] }> {
-  if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal') return [];
+  if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal' && tr.kind !== 'crimp' && tr.kind !== 'pleat') return [];
   return tr.moving.map((f) => {
     const iso = planeIsoOf(tr.startPlacements.get(f)!);
     return { face: f, poly: materialPolygon(after.cp, f).map((p) => applyPlaneIso(iso, p)) };
@@ -329,6 +333,8 @@ const WEIGHT: Record<StepKind, number> = {
   reverse: 3,
   squash: 3,
   petal: 4,
+  pleat: 2,
+  crimp: 4,
 };
 
 /** Weighted moves, plus deep stacks (hard to fold neatly): 1 very easy … 5 complex. */
@@ -425,6 +431,25 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
     for (const k of kites) symbols.push({ kind: 'valley-line', a: k[0], b: k[1] });
     symbols.push({ kind: 'valley-arrow', from: transition.apex, to: reflectPoint(transition.hinge, transition.apex) });
     return { ...base, line: hinge, caption: { kind: 'petal', tip: { ...placeOf(before, transition.apex, hull), what: 'tip' } }, symbols, hands: NO_HANDS };
+  }
+  if (transition && (transition.kind === 'pleat' || transition.kind === 'crimp')) {
+    // Valley on the first line, mountain on the second, and an arrow taking the far part over.
+    const firstLine = transition.first;
+    const secondLine = transition.second;
+    const symbols: DiagramSymbol[] = [];
+    const where = transition.kind === 'crimp' ? movingOutlines(log.states[first + 1]!, transition).map((o) => o.poly) : [hull];
+    const a = firstLine ? extentAlong(firstLine, where) : null;
+    const b = secondLine ? extentAlong(secondLine, where) : null;
+    if (a) symbols.push({ kind: 'valley-line', a: a[0], b: a[1] });
+    if (b) symbols.push({ kind: 'mountain-line', a: b[0], b: b[1] });
+    if (b) {
+      const mid: Vec2 = [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2];
+      const seed = 'seed' in move.params ? (move.params.seed as Vec2) : mid;
+      const from: Vec2 = [mid[0] + (seed[0] - mid[0]) * 0.5, mid[1] + (seed[1] - mid[1]) * 0.5];
+      symbols.push({ kind: 'valley-arrow', from, to: reflectPoint(firstLine, from) });
+    }
+    const caption: Caption = transition.kind === 'pleat' ? { kind: 'pleat' } : { kind: 'crimp', reverse: transition.reverse ?? 'inside' };
+    return { ...base, line: firstLine, caption, symbols, hands: NO_HANDS };
   }
   if (move.type === 'burnish' || !transition || (transition.kind !== 'fold' && transition.kind !== 'reverse') || !line) {
     // A standalone crease: run a fingernail along the fold where it lies on the model.

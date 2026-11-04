@@ -73,3 +73,38 @@ describe('the crane\'s squash, petal and reverse folds move without tearing the 
     });
   }
 });
+
+describe('pleats and crimps move without tearing the paper', () => {
+  const sheet = createSheet({ sizeMm: 100 });
+  const tri = (() => {
+    const r = applyMove(sheet, { type: 'fold', params: { line: { p: [0, 0], d: [1, 1] }, seed: [25, -25], layers: 'all', direction: 'valley' } });
+    if (!r.ok) throw new Error('refused');
+    return r.state;
+  })();
+  const cases: Array<{ label: string; before: KernelState; move: Parameters<typeof applyMove>[1] }> = [
+    { label: 'pleat', before: sheet, move: { type: 'pleat', params: { first: { p: [10, 0], d: [0, 1] }, second: { p: [25, 0], d: [0.2, 1] }, seed: [40, 0] } } },
+    { label: 'inside crimp', before: tri, move: { type: 'crimp', params: { first: { p: [10, 10], d: [1, 3] }, second: { p: [20, 20], d: [1, 1.5] }, seed: [40, 44], kind: 'inside' } } },
+    { label: 'outside crimp', before: tri, move: { type: 'crimp', params: { first: { p: [10, 10], d: [-0.866, 0.5] }, second: { p: [20, 20], d: [-0.94, 0.342] }, seed: [40, 44], kind: 'outside' } } },
+  ];
+  for (const c of cases) {
+    it(c.label, () => {
+      const r = applyMove(c.before, c.move);
+      if (!r.ok) throw new Error(`refused: ${r.reason} ${r.detail ?? ''}`);
+      const after = snapshot(r.state);
+      const s = { before: snapshot(c.before), after, transition: r.transition as MotionTransition, params: { ...skinParamsFor(after.paper, 'real'), restOpen: false } };
+      const rest = Math.max(worstGap(s, 0), worstGap(s, Math.PI));
+      let worst = 0;
+      for (let j = 1; j < 16; j++) worst = Math.max(worst, worstGap(s, (Math.PI * j) / 16));
+      expect(worst).toBeLessThan(rest + 1);
+      // Lands where the static frame draws it.
+      const motion = { before: s.before, transition: s.transition, theta: Math.PI, sharpnessAt: () => 0 };
+      for (const f of after.faces) {
+        for (const p of f.material) {
+          const a = skinPoint(after, s.params, f.id, p, motion);
+          const b = skinPoint(after, s.params, f.id, p);
+          for (let k = 0; k < 3; k++) expect(a[k]).toBeCloseTo(b[k]!, 5);
+        }
+      }
+    });
+  }
+});

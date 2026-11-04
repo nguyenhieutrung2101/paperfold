@@ -186,6 +186,12 @@ export function candidateName(kind: CandidateKind, layers: number): string {
       return 'Squash fold';
     case 'petal':
       return 'Petal fold';
+    case 'pleat':
+      return 'Pleat';
+    case 'inside-crimp':
+      return 'Inside crimp';
+    case 'outside-crimp':
+      return 'Outside crimp';
   }
 }
 
@@ -207,6 +213,9 @@ export const moveNames: Record<MoveName, string> = {
   'outside-reverse-fold': 'Outside reverse fold',
   'squash-fold': 'Squash fold',
   'petal-fold': 'Petal fold',
+  pleat: 'Pleat',
+  'inside-crimp': 'Inside crimp',
+  'outside-crimp': 'Outside crimp',
   crease: 'Crease',
   'turn-over': 'Turn over',
   rotate: 'Rotate',
@@ -259,6 +268,10 @@ export function captionText(c: Caption): string {
       return c.reverse === 'inside' ? 'Push the tip inside.' : 'Wrap the tip around the outside.';
     case 'squash':
       return 'Lift the flap, open it, and squash it flat.';
+    case 'pleat':
+      return 'Pleat: valley fold on the first line, mountain fold on the second.';
+    case 'crimp':
+      return c.reverse === 'inside' ? 'Crimp the point inside: two reverse folds.' : 'Crimp the point outside: two reverse folds.';
     case 'petal':
       return `Lift ${placeText(c.tip)} up; the sides fold in.`;
     case 'turn-over':

@@ -28,6 +28,7 @@ export { fold } from './moves/fold.ts';
 export { reverseFold } from './moves/reverse.ts';
 export { squashFold } from './moves/squash.ts';
 export { petalFold } from './moves/petal.ts';
+export { crimpFold, pleatFold } from './moves/pleat.ts';
 export { applyMultiMotion, type Cut, type MotionGroup, type MultiBuild, type MultiSpec } from './moves/multi.ts';
 export * from './moves/foldCore.ts';
 export { burnish } from './moves/burnish.ts';

@@ -225,6 +225,29 @@ test('pull a folded edge out: an outside reverse fold', async ({ page }) => {
   await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Outside reverse fold');
 });
 
+test('a pleat: drag an edge over and pick Pleat; the far part folds back', async ({ page }) => {
+  // The bottom right corner 40 mm left: the fold line at x = 55, the second line halfway out.
+  await dragMm(page, [74.5, -74.5], [34.5, -74.5], async () => {
+    await pickInStrip(page, 'Pleat');
+  });
+  await expect(steps(page)).toHaveCount(2);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '1. Pleat');
+});
+
+test('a crimp: on a closed flap the strip offers Inside crimp', async ({ page }) => {
+  await triangle(page);
+  // The same drag as the inside reverse fold; the crimp folds back halfway to the grab.
+  await dragMm(page, [55.4, 54.6], [35, 65], async () => {
+    await pickInStrip(page, 'Inside crimp');
+  });
+  await expect(steps(page)).toHaveCount(4);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Inside crimp');
+  await page.getByRole('tab', { name: 'Steps' }).click();
+  const list = page.getByRole('complementary', { name: 'All steps as text' });
+  await expect(list.getByText('Crimp the point inside', { exact: false })).toBeVisible();
+  await expect(page.locator('.warn')).toHaveCount(0);
+});
+
 test('fold with the keyboard', async ({ page }) => {
   await page.keyboard.press('k');
   await expect(page.getByRole('status').getByText(/Pick what to move/)).toBeVisible();
