@@ -192,6 +192,8 @@ export function candidateName(kind: CandidateKind, layers: number): string {
       return 'Inside crimp';
     case 'outside-crimp':
       return 'Outside crimp';
+    case 'rabbit-ear':
+      return 'Rabbit ear';
   }
 }
 
@@ -216,6 +218,7 @@ export const moveNames: Record<MoveName, string> = {
   pleat: 'Pleat',
   'inside-crimp': 'Inside crimp',
   'outside-crimp': 'Outside crimp',
+  'rabbit-ear': 'Rabbit ear',
   crease: 'Crease',
   'turn-over': 'Turn over',
   rotate: 'Rotate',
@@ -274,6 +277,8 @@ export function captionText(c: Caption): string {
       return c.reverse === 'inside' ? 'Crimp the point inside: two reverse folds.' : 'Crimp the point outside: two reverse folds.';
     case 'petal':
       return `Lift ${placeText(c.tip)} up; the sides fold in.`;
+    case 'rabbit-ear':
+      return `Rabbit ear ${placeText(c.tip)}: fold both sides in and lay the point over.`;
     case 'turn-over':
       return c.axis === 'side' ? 'Turn it over.' : 'Turn it over, top to bottom.';
     case 'rotate': {

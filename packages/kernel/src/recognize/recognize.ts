@@ -17,6 +17,7 @@ export type MoveName =
   | 'pleat'
   | 'inside-crimp'
   | 'outside-crimp'
+  | 'rabbit-ear'
   | 'crease'
   | 'turn-over'
   | 'rotate'
@@ -181,6 +182,14 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
     // A pleat: two parts moved, one turned over and one not (it went over twice).
     const motions = movedMotions(before, after, tol);
     if (motions.length === 2 && motions.filter((m) => m.flips).length === 1) return { name: 'pleat', confidence: 0.85 };
+    // A rabbit ear: two sides turned over and the ear turned twice, its four new creases
+    // meeting at one point.
+    if (motions.length === 3 && motions.filter((m) => m.flips).length === 2) {
+      const adj = adjacency(after.cp);
+      const madeIds = new Set(made.map((m) => m.seg.id));
+      const hub = [...new Set(made.flatMap((m) => [...m.seg.v]))].some((v) => (adj.vertexEdges.get(v) ?? []).filter((e) => madeIds.has(e)).length >= 4);
+      if (hub) return { name: 'rabbit-ear', confidence: 0.85 };
+    }
     // A plain fold: which way did the moving part go, as seen by the viewer?
     for (const m of made) {
       const { left, right } = m.seg;

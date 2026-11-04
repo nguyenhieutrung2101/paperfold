@@ -1,9 +1,11 @@
 import { type Candidate, type CandidateKind, candidateMoves, orderCandidates } from '@paperfold/intent';
+import { convexHull } from '../mirror.ts';
 import {
   adjacency,
   applyMaterial,
   lineThrough,
   line as makeLine,
+  reflectPoint,
   signedDistance,
   applyMove,
   containsStrictly,
@@ -211,6 +213,51 @@ function squashHinges(state: KernelState, p: Vec2, k: number): PlaneLine[] {
 }
 
 /**
+ * Rabbit ears at the model's corner nearest p (within 20 mm): on the triangle that corner makes
+ * with its two neighbours on the model's outline, the ear laid toward either neighbour, with
+ * the layers under p or just the top one.
+ */
+function rabbitEars(state: KernelState, p: Vec2, holds: readonly Vec2[]): Array<{ candidate: Candidate; landing: Vec2 | null }> {
+  const view = flatView(state);
+  const st = stackAt(state, p);
+  if (!view || !st.ok || st.faces.length === 0) return [];
+  const hull = convexHull(view.faceIds.flatMap((f) => view.poly.get(f)!));
+  if (hull.length < 3) return [];
+  let i = -1;
+  let best = 20;
+  hull.forEach((q, j) => {
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (d < best) {
+      best = d;
+      i = j;
+    }
+  });
+  if (i < 0) return [];
+  const C = hull[i]!;
+  const A = hull[(i + hull.length - 1) % hull.length]!;
+  const B = hull[(i + 1) % hull.length]!;
+  const u: Vec2 = [A[0] - C[0], A[1] - C[1]];
+  const v: Vec2 = [B[0] - C[0], B[1] - C[1]];
+  const angle = Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / (Math.hypot(...u) * Math.hypot(...v)))));
+  if (angle > (150 * Math.PI) / 180) return [];
+  const out: Array<{ candidate: Candidate; landing: Vec2 | null }> = [];
+  const counts: Array<number | 'all'> = st.faces.length > 1 ? ['all', 1] : [1];
+  for (const layers of counts) {
+    for (const side of ['a', 'b'] as const) {
+      const move: Move = { type: 'rabbitEar', params: { tip: C, base: [A, B], seed: p, layers, side, holds: [...holds] } };
+      // Where the tip lands: on the base, over the bisector of the end away from the ear.
+      const far = side === 'b' ? A : B;
+      const a = Math.hypot(B[0] - C[0], B[1] - C[1]);
+      const b = Math.hypot(A[0] - C[0], A[1] - C[1]);
+      const c = Math.hypot(A[0] - B[0], A[1] - B[1]);
+      const I: Vec2 = [(a * A[0] + b * B[0] + c * C[0]) / (a + b + c), (a * A[1] + b * B[1] + c * C[1]) / (a + b + c)];
+      out.push({ candidate: { kind: 'rabbit-ear', layers: layers === 'all' ? st.faces.length : 1, move }, landing: reflectPoint(lineThrough(far, I), C) });
+    }
+  }
+  return out;
+}
+
+/**
  * Where a pleat or crimp along the drag's line folds back: the nearest precrease past the line
  * on the side that moves (within 20° of it, wholly on that side, with the grab point beyond
  * it), as you'd fold one on paper; with none, a parallel line halfway to the grab point.
@@ -394,7 +441,12 @@ export class KernelHost {
   private names = new WeakMap<KernelState, MoveName>();
   private exploreCache: { key: string; results: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove> }> } | null = null;
   /** Squash candidates don't depend on the drag's line: once per press. */
-  private squashCache: { key: string; results: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove> }> } | null = null;
+  private squashCache: {
+    key: string;
+    results: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove> }>;
+    /** Rabbit ears at the pressed corner, with where each puts the tip. */
+    ears: Array<{ candidate: Candidate; ok: boolean; result: ReturnType<typeof applyMove>; landing: Vec2 | null }>;
+  } | null = null;
   private peekCache: { key: string; result: PeekResult } | null = null;
 
   reset(options: SheetOptions): View {
@@ -431,7 +483,11 @@ export class KernelHost {
           const result = applyMove(state, candidate.move);
           return { candidate, ok: result.ok, result };
         });
-        this.squashCache = { key: squashKey, results };
+        const ears = (q.lead ? [] : rabbitEars(state, q.seed, q.holds)).map(({ candidate, landing }) => {
+          const result = applyMove(state, candidate.move);
+          return { candidate, ok: result.ok, result, landing };
+        });
+        this.squashCache = { key: squashKey, results, ears };
       }
       cands = cands.filter((c) => c.kind !== 'squash');
       // Keep the list short on deep stacks: top, all, a few k near the picked count, and the
@@ -469,6 +525,17 @@ export class KernelHost {
         }
         results.push(r);
       }
+      // A rabbit ear lays the ear toward the side the drag goes: of the two, the one whose tip
+      // lands nearer the pointer, for each layer count.
+      const pointer = reflectPoint(lineThrough(q.line.p, [q.line.p[0] + q.line.d[0], q.line.p[1] + q.line.d[1]]), q.seed);
+      const byLayers = new Map<number, (typeof this.squashCache.ears)[number]>();
+      for (const e of this.squashCache.ears) {
+        if (!e.ok || !e.landing) continue;
+        const cur = byLayers.get(e.candidate.layers);
+        const d = (x: Vec2) => Math.hypot(x[0] - pointer[0], x[1] - pointer[1]);
+        if (!cur || d(e.landing) < d(cur.landing!)) byLayers.set(e.candidate.layers, e);
+      }
+      for (const e of byLayers.values()) results.push({ candidate: e.candidate, ok: e.ok, result: e.result });
       this.exploreCache = { key, results };
     }
     const ordered = orderCandidates(this.exploreCache.results, {
@@ -489,7 +556,7 @@ export class KernelHost {
       return { candidates, selected, preview: null, refusal: pick && !pick.result.ok ? refusal(pick.result) : null };
     }
     const tr = pick.result.transition;
-    if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal' && tr.kind !== 'pleat' && tr.kind !== 'crimp') {
+    if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal' && tr.kind !== 'pleat' && tr.kind !== 'crimp' && tr.kind !== 'rabbitEar') {
       return { candidates, selected, preview: null, refusal: null };
     }
     const named = recognize(state, pick.result.state);

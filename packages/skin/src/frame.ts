@@ -14,6 +14,7 @@ import {
   leftNormal,
   type Line2,
   len3,
+  lineThrough,
   type Paper,
   planeDirToWorld,
   planeIsoOf,
@@ -30,7 +31,7 @@ import { type BendLayer, bendPoint, bendTangent } from './bend.ts';
 import { faceHeights } from './heights.ts';
 import { type MeshData, MeshBuilder } from './meshBuilder.ts';
 import { planRelax } from './relax.ts';
-import { planPetal, planSquash, planZigzag } from './multi.ts';
+import { planPetal, planRabbit, planSquash, planZigzag } from './multi.ts';
 import { planReverse } from './reverse.ts';
 
 export interface SkinParams {
@@ -69,12 +70,19 @@ export type ReverseTransition = Extract<Transition, { kind: 'reverse' }>;
 export type SquashTransition = Extract<Transition, { kind: 'squash' }>;
 export type PetalTransition = Extract<Transition, { kind: 'petal' }>;
 export type ZigzagTransition = Extract<Transition, { kind: 'pleat' | 'crimp' }>;
+export type RabbitTransition = Extract<Transition, { kind: 'rabbitEar' }>;
 /** Transitions the skin can animate as a fold in motion. */
-export type MotionTransition = FoldTransition | ReverseTransition | SquashTransition | PetalTransition | ZigzagTransition;
+export type MotionTransition = FoldTransition | ReverseTransition | SquashTransition | PetalTransition | ZigzagTransition | RabbitTransition;
 
-/** The line a motion turns about first: the fold line, a squash's or petal's hinge, a pleat's first line. */
+/**
+ * The line a motion turns about first: the fold line, a squash's or petal's hinge, a pleat's
+ * first line, a rabbit ear's first bisector.
+ */
 export function motionLine(tr: MotionTransition): Line2 {
-  return 'line' in tr ? tr.line : 'hinge' in tr ? tr.hinge : tr.first;
+  if ('line' in tr) return tr.line;
+  if ('hinge' in tr) return tr.hinge;
+  if ('first' in tr) return tr.first;
+  return lineThrough(tr.sideA, tr.center);
 }
 
 /** A fold in motion: the kernel's validated transition at angle theta. */
@@ -271,7 +279,17 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
     // along the degree-4 motion, or, when it can't open, the tip swings over in one piece.
     // Squash and petal folds move rigidly too (multi.ts).
     const plan =
-      tr.kind === 'reverse' ? planReverse(snap, tr) : tr.kind === 'squash' ? planSquash(tr) : tr.kind === 'petal' ? planPetal(tr) : tr.kind === 'pleat' || tr.kind === 'crimp' ? planZigzag(tr) : null;
+      tr.kind === 'reverse'
+        ? planReverse(snap, tr)
+        : tr.kind === 'squash'
+          ? planSquash(tr)
+          : tr.kind === 'petal'
+            ? planPetal(tr)
+            : tr.kind === 'pleat' || tr.kind === 'crimp'
+              ? planZigzag(tr)
+              : tr.kind === 'rabbitEar'
+                ? planRabbit(tr)
+                : null;
     const lift = plan ? plan.lift(k) : 0;
     for (const f of snap.faces) {
       const parent = tr.parentOf.get(f.id) ?? f.id;

@@ -47,7 +47,7 @@ function landed(r: Extract<PerformResult, { ok: true }>, fromTheta = 0): void {
   const base = { view: r.view, stepsView: null, lastRefusal: null };
   if (tr.kind === 'turnOver') cue('turn', lastTouch());
   else if (tr.kind !== 'burnish' && tr.kind !== 'rotate') cue('fold', lastTouch());
-  if (tr.kind === 'fold' || tr.kind === 'reverse' || tr.kind === 'squash' || tr.kind === 'petal' || tr.kind === 'pleat' || tr.kind === 'crimp') {
+  if (tr.kind === 'fold' || tr.kind === 'reverse' || tr.kind === 'squash' || tr.kind === 'petal' || tr.kind === 'pleat' || tr.kind === 'crimp' || tr.kind === 'rabbitEar') {
     st.set({
       ...base,
       active: { key: motionKey++, before: r.before, transition: tr, startedAt: performance.now(), creasedAt: null, fromTheta },
@@ -76,7 +76,7 @@ export async function commitMove(
   }
   landed(r, fromTheta);
   advanceFirstRun(1);
-  const foldLike = move.type === 'fold' || move.type === 'reverseFold' || move.type === 'squash' || move.type === 'petal' || move.type === 'pleat' || move.type === 'crimp';
+  const foldLike = move.type === 'fold' || move.type === 'reverseFold' || move.type === 'squash' || move.type === 'petal' || move.type === 'pleat' || move.type === 'crimp' || move.type === 'rabbitEar';
   if (useStore.getState().autoCrease && foldLike) await creaseActive();
   void checkFollow();
   // The mirror tool: the same fold on the other side of the model's middle line.

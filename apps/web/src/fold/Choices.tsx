@@ -57,6 +57,16 @@ export function MovePicture({ kind, layers }: { readonly kind: PictureKind; read
       </svg>
     );
   }
+  if (kind === 'rabbit-ear') {
+    // The triangle's sides folded in, the ear standing over to one side.
+    return (
+      <svg viewBox="0 0 40 40" className="move-picture" aria-hidden="true">
+        <polygon points="4,34 36,34 20,18" {...sheet} />
+        <polygon points="20,18 27,34 18,34" fill="var(--paper-under)" stroke="var(--text)" strokeWidth={1.4} strokeLinejoin="round" />
+        <polygon points="20,18 30,6 27,24" {...moved} />
+      </svg>
+    );
+  }
   if (kind === 'petal') {
     // The bottom point lifted up on a hinge, the sides folded in under it.
     return (

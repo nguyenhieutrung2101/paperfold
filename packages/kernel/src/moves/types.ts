@@ -73,6 +73,19 @@ export interface CrimpParams {
   readonly holds?: readonly Vec2[];
 }
 
+export interface RabbitEarParams {
+  /** The triangle (table plane): its tip, and the two ends of its base. */
+  readonly tip: Vec2;
+  readonly base: readonly [Vec2, Vec2];
+  /** A point on the triangle's paper (near the tip). */
+  readonly seed: Vec2;
+  /** How many layers of the triangle move together. */
+  readonly layers?: number | 'all';
+  /** Which end of the base the ear lies toward: 'b' (the second, default) or 'a'. */
+  readonly side?: 'a' | 'b';
+  readonly holds?: readonly Vec2[];
+}
+
 export interface BurnishParams {
   /** The folded edge to crease, as a line on the table plane. */
   readonly line: PlaneLine;
@@ -100,6 +113,7 @@ export type Move =
   | { readonly type: 'petal'; readonly params: PetalParams }
   | { readonly type: 'pleat'; readonly params: PleatParams }
   | { readonly type: 'crimp'; readonly params: CrimpParams }
+  | { readonly type: 'rabbitEar'; readonly params: RabbitEarParams }
   | { readonly type: 'burnish'; readonly params: BurnishParams }
   | { readonly type: 'turnOver'; readonly params: TurnOverParams }
   | { readonly type: 'rotate'; readonly params: RotateParams };
@@ -243,6 +257,24 @@ export type Transition =
       /** The strip between the lines (turns over the first), and the part past the second. */
       readonly middle: readonly FaceId[];
       readonly far: readonly FaceId[];
+      readonly parentOf: ReadonlyMap<FaceId, FaceId>;
+      readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
+      readonly newCreases: readonly EdgeId[];
+    }
+  | {
+      /** A rabbit ear: two sides fold in on the bisectors and the ear lies between them. */
+      readonly kind: 'rabbitEar';
+      readonly tip: Vec2;
+      /** The base's end whose side runs on into the ear, and the end the ear lies toward. */
+      readonly sideA: Vec2;
+      readonly sideB: Vec2;
+      /** The incenter (where the four creases meet), and the foot of the ear's crease on side B. */
+      readonly center: Vec2;
+      readonly foot: Vec2;
+      readonly moving: readonly FaceId[];
+      readonly a: readonly FaceId[];
+      readonly b: readonly FaceId[];
+      readonly ear: readonly FaceId[];
       readonly parentOf: ReadonlyMap<FaceId, FaceId>;
       readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
       readonly newCreases: readonly EdgeId[];

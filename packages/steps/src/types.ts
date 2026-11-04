@@ -1,6 +1,6 @@
 import type { BaseName, FaceId, KernelState, Line2, Move, MoveName, OpId, Transition, Vec2 } from '@paperfold/kernel';
 
-export type StepKind = 'fold' | 'precrease' | 'unfold' | 'reverse' | 'squash' | 'petal' | 'pleat' | 'crimp' | 'crease' | 'turn-over' | 'rotate';
+export type StepKind = 'fold' | 'precrease' | 'unfold' | 'reverse' | 'squash' | 'petal' | 'pleat' | 'crimp' | 'rabbit-ear' | 'crease' | 'turn-over' | 'rotate';
 
 /** Where something is, in words the app can phrase: "the bottom corner", "the left edge". */
 export interface Place {
@@ -23,6 +23,7 @@ export type Caption =
   | { readonly kind: 'squash' }
   | { readonly kind: 'pleat' }
   | { readonly kind: 'crimp'; readonly reverse: 'inside' | 'outside' }
+  | { readonly kind: 'rabbit-ear'; readonly tip: Place }
   | { readonly kind: 'petal'; readonly tip: Place }
   | { readonly kind: 'turn-over'; readonly axis: 'side' | 'top' }
   | { readonly kind: 'rotate'; readonly degrees: number }

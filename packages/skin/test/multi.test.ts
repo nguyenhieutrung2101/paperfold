@@ -74,7 +74,7 @@ describe('the crane\'s squash, petal and reverse folds move without tearing the 
   }
 });
 
-describe('pleats and crimps move without tearing the paper', () => {
+describe('pleats, crimps and rabbit ears move without tearing the paper', () => {
   const sheet = createSheet({ sizeMm: 100 });
   const tri = (() => {
     const r = applyMove(sheet, { type: 'fold', params: { line: { p: [0, 0], d: [1, 1] }, seed: [25, -25], layers: 'all', direction: 'valley' } });
@@ -84,6 +84,8 @@ describe('pleats and crimps move without tearing the paper', () => {
   const cases: Array<{ label: string; before: KernelState; move: Parameters<typeof applyMove>[1] }> = [
     { label: 'pleat', before: sheet, move: { type: 'pleat', params: { first: { p: [10, 0], d: [0, 1] }, second: { p: [25, 0], d: [0.2, 1] }, seed: [40, 0] } } },
     { label: 'inside crimp', before: tri, move: { type: 'crimp', params: { first: { p: [10, 10], d: [1, 3] }, second: { p: [20, 20], d: [1, 1.5] }, seed: [40, 44], kind: 'inside' } } },
+    { label: 'rabbit ear on one layer', before: sheet, move: { type: 'rabbitEar', params: { tip: [50, 50], base: [[-50, 50], [50, -50]], seed: [40, 40] } } },
+    { label: 'rabbit ear on both layers, to the other side', before: tri, move: { type: 'rabbitEar', params: { tip: [50, 50], base: [[-50, 50], [-50, -50]], seed: [30, 40], layers: 'all', side: 'a' } } },
     { label: 'outside crimp', before: tri, move: { type: 'crimp', params: { first: { p: [10, 10], d: [-0.866, 0.5] }, second: { p: [20, 20], d: [-0.94, 0.342] }, seed: [40, 44], kind: 'outside' } } },
   ];
   for (const c of cases) {

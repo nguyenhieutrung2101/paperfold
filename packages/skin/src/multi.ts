@@ -16,6 +16,7 @@ import type { ReversePlan } from './reverse.ts';
 export type SquashTransition = Extract<Transition, { kind: 'squash' }>;
 export type PetalTransition = Extract<Transition, { kind: 'petal' }>;
 export type ZigzagTransition = Extract<Transition, { kind: 'pleat' | 'crimp' }>;
+export type RabbitTransition = Extract<Transition, { kind: 'rabbitEar' }>;
 
 /**
  * How squash and petal folds move (Phase 2), without tearing: every part turns rigidly, and the
@@ -37,6 +38,11 @@ export type ZigzagTransition = Extract<Transition, { kind: 'pleat' | 'crimp' }>;
  * **Pleat and crimp.** The strip between the lines lifts over the first line (φ from 0 to π),
  * and the part past the second turns back about the second line by the same φ, in the strip's
  * frame: two hinges in a zigzag, joined at every moment.
+ *
+ * **Rabbit ear.** One degree-4 vertex, at the incenter: side a turns over its bisector by φ,
+ * side b over its own by ψ, and the ear between them is fixed by its two creases (the tip's
+ * bisector, shared with side a, and the foot crease, shared with side b). ψ keeps the angle
+ * between those creases as it is in the paper, closed form like the petal's sides.
  *
  * APPROXIMATION: a crimp's two sides move together, like a pleat of the whole flap; the strip
  * and the far part end between (inside) or around (outside) the flap's layers by sliding to
@@ -214,5 +220,60 @@ export function planZigzag(tr: ZigzagTransition): MultiPlan {
   };
   const plan: MultiPlan = { mode: 'kinematic', moves: new Set([...middle, ...far]), pose, lift: () => 0 };
   zigzagCache.set(tr, plan);
+  return plan;
+}
+
+const rabbitCache = new WeakMap<RabbitTransition, MultiPlan>();
+
+export function planRabbit(tr: RabbitTransition): MultiPlan {
+  const hit = rabbitCache.get(tr);
+  if (hit) return hit;
+  const I = planeToWorld(tr.center);
+  const dirTo = (p: readonly [number, number]): Vec3 => {
+    const w = planeToWorld(p);
+    return norm([w[0] - I[0], w[1] - I[1], w[2] - I[2]]);
+  };
+  const pA = dirTo(tr.sideA);
+  const pB = dirTo(tr.sideB);
+  const c0 = dirTo(tr.tip);
+  const f0 = dirTo(tr.foot);
+  // In the table, the side of each bisector its part lies on.
+  const toward = (axis: Vec3, p: Vec3): Vec3 => norm(add(p, scale(axis, -dot3(p, axis))));
+  const uA = toward(pA, c0);
+  const uB = toward(pB, f0);
+  const sideA = (phi: number) => lift(I, pA, uA, phi);
+  const sB = dot3(cross3(pB, uB), UP) >= 0 ? 1 : -1;
+  const sideB = (psi: number) => rotationAbout(I, pB, sB * psi);
+  const v = scale(cross3(pB, uB), sB);
+  const beta = Math.acos(Math.max(-1, Math.min(1, dot3(pB, f0))));
+  const gamma = Math.acos(Math.max(-1, Math.min(1, dot3(c0, f0))));
+  const solve = (phi: number): number => {
+    const k1 = rotDir(sideA(phi), c0);
+    const A = Math.sin(beta) * dot3(k1, uB);
+    const B = Math.sin(beta) * dot3(k1, v);
+    const C = Math.cos(gamma) - Math.cos(beta) * dot3(k1, pB);
+    const R = Math.hypot(A, B);
+    if (R < 1e-9) return phi;
+    const d = Math.atan2(B, A);
+    const c = Math.acos(Math.max(-1, Math.min(1, C / R)));
+    const wrap = (x: number) => ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    const cands = [wrap(d + c), wrap(d - c)];
+    return cands.reduce((b, x) => (Math.abs(x - phi) < Math.abs(b - phi) ? x : b));
+  };
+  const groups = new Map<FaceId, 'a' | 'b' | 'ear'>();
+  for (const f of tr.a) groups.set(f, 'a');
+  for (const f of tr.b) groups.set(f, 'b');
+  for (const f of tr.ear) groups.set(f, 'ear');
+  const pose = (f: FaceId, k: number): Rigid3 => {
+    const g = groups.get(f);
+    if (!g) return IDENTITY;
+    const phi = Math.PI * ease(k);
+    if (g === 'a') return sideA(phi);
+    const psi = solve(phi);
+    if (g === 'b') return sideB(psi);
+    return frameTurn(I, c0, f0, rotDir(sideA(phi), c0), rotDir(sideB(psi), f0));
+  };
+  const plan: MultiPlan = { mode: 'kinematic', moves: new Set(groups.keys()), pose, lift: () => 0 };
+  rabbitCache.set(tr, plan);
   return plan;
 }

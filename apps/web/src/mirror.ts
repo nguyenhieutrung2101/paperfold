@@ -82,12 +82,18 @@ export function mirrorMove(move: Move, ax: Line2): Move | null {
       if (sameLine(first, move.params.first)) return null;
       return { type: move.type, params: { ...move.params, first, second: mirrorLine(ax, move.params.second), seed: reflect(ax, move.params.seed), holds: pts(move.params.holds) } } as Move;
     }
+    case 'rabbitEar': {
+      const tip = reflect(ax, move.params.tip);
+      if (Math.hypot(tip[0] - move.params.tip[0], tip[1] - move.params.tip[1]) < 1e-3) return null;
+      const base: [Vec2, Vec2] = [reflect(ax, move.params.base[0]), reflect(ax, move.params.base[1])];
+      return { type: 'rabbitEar', params: { ...move.params, tip, base, seed: reflect(ax, move.params.seed), holds: pts(move.params.holds) } };
+    }
     default:
       return null;
   }
 }
 
-function convexHull(points: readonly Vec2[]): Vec2[] {
+export function convexHull(points: readonly Vec2[]): Vec2[] {
   const seen = new Map<string, Vec2>();
   for (const q of points) {
     const r: Vec2 = [Math.round(q[0] * 1e6) / 1e6, Math.round(q[1] * 1e6) / 1e6];

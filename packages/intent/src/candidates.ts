@@ -10,7 +10,8 @@ export type CandidateKind =
   | 'petal'
   | 'pleat'
   | 'inside-crimp'
-  | 'outside-crimp';
+  | 'outside-crimp'
+  | 'rabbit-ear';
 
 export interface Candidate {
   readonly kind: CandidateKind;
@@ -117,6 +118,7 @@ export function orderCandidates<T extends { readonly candidate: Candidate; reado
     if (c.kind === 'petal') return base + (k === 1 ? 0.5 : 500);
     if (c.kind === 'squash') return base + 600 + c.layers;
     if (c.kind === 'pleat') return base + 700;
+    if (c.kind === 'rabbit-ear') return base + 650 + (c.layers === 1 ? 1 : 0);
     if (c.kind === 'inside-crimp') return base + 950;
     if (c.kind === 'outside-crimp') return base + 951;
     if (c.kind === 'inside-reverse') return base + 900;

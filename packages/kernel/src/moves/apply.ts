@@ -3,6 +3,7 @@ import { burnish } from './burnish.ts';
 import { fold } from './fold.ts';
 import { petalFold } from './petal.ts';
 import { crimpFold, pleatFold } from './pleat.ts';
+import { rabbitEarFold } from './rabbit.ts';
 import { reverseFold } from './reverse.ts';
 import { squashFold } from './squash.ts';
 import { rotate, turnOver } from './turn.ts';
@@ -23,6 +24,8 @@ export function applyMove(state: KernelState, move: Move): MoveResult {
       return pleatFold(state, move.params);
     case 'crimp':
       return crimpFold(state, move.params);
+    case 'rabbitEar':
+      return rabbitEarFold(state, move.params);
     case 'burnish':
       return burnish(state, move.params);
     case 'turnOver':

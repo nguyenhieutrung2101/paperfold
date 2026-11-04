@@ -158,6 +158,8 @@ function kindOf(log: DesignLog, i: number): StepKind {
       return 'pleat';
     case 'crimp':
       return 'crimp';
+    case 'rabbitEar':
+      return 'rabbit-ear';
     case 'burnish':
       return 'crease';
     case 'turnOver':
@@ -171,7 +173,7 @@ function kindOf(log: DesignLog, i: number): StepKind {
 
 /** Outlines (table plane, before the move) of the faces a fold or reverse fold moves. */
 function movingOutlines(after: KernelState, tr: Transition): Array<{ face: FaceId; poly: Vec2[] }> {
-  if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal' && tr.kind !== 'crimp' && tr.kind !== 'pleat') return [];
+  if (tr.kind !== 'fold' && tr.kind !== 'reverse' && tr.kind !== 'squash' && tr.kind !== 'petal' && tr.kind !== 'crimp' && tr.kind !== 'pleat' && tr.kind !== 'rabbitEar') return [];
   return tr.moving.map((f) => {
     const iso = planeIsoOf(tr.startPlacements.get(f)!);
     return { face: f, poly: materialPolygon(after.cp, f).map((p) => applyPlaneIso(iso, p)) };
@@ -335,6 +337,7 @@ const WEIGHT: Record<StepKind, number> = {
   petal: 4,
   pleat: 2,
   crimp: 4,
+  'rabbit-ear': 3,
 };
 
 /** Weighted moves, plus deep stacks (hard to fold neatly): 1 very easy … 5 complex. */
@@ -431,6 +434,19 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
     for (const k of kites) symbols.push({ kind: 'valley-line', a: k[0], b: k[1] });
     symbols.push({ kind: 'valley-arrow', from: transition.apex, to: reflectPoint(transition.hinge, transition.apex) });
     return { ...base, line: hinge, caption: { kind: 'petal', tip: { ...placeOf(before, transition.apex, hull), what: 'tip' } }, symbols, hands: NO_HANDS };
+  }
+  if (transition && transition.kind === 'rabbitEar') {
+    // Valley lines on the two base bisectors and the ear's foot, a mountain on the tip's
+    // bisector; an arrow takes the tip over to where the ear lies.
+    const { tip, sideA, sideB, center, foot } = transition;
+    const symbols: DiagramSymbol[] = [
+      { kind: 'valley-line', a: sideA, b: center },
+      { kind: 'valley-line', a: sideB, b: center },
+      { kind: 'valley-line', a: center, b: foot },
+      { kind: 'mountain-line', a: tip, b: center },
+      { kind: 'valley-arrow', from: tip, to: reflectPoint(lineThrough(sideA, center), tip) },
+    ];
+    return { ...base, line: lineThrough(sideA, center), caption: { kind: 'rabbit-ear', tip: { ...placeOf(before, tip, hull), what: 'corner' } }, symbols, hands: NO_HANDS };
   }
   if (transition && (transition.kind === 'pleat' || transition.kind === 'crimp')) {
     // Valley on the first line, mountain on the second, and an arrow taking the far part over.

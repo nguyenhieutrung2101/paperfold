@@ -248,6 +248,16 @@ test('a crimp: on a closed flap the strip offers Inside crimp', async ({ page })
   await expect(page.locator('.warn')).toHaveCount(0);
 });
 
+test('a rabbit ear: drag the triangle\'s corner toward where its tip goes', async ({ page }) => {
+  await triangle(page);
+  // The right-angle corner's tip lands on the diagonal 150 mm from the far end: (31.07, 31.07).
+  await dragMm(page, [-74, 74], [31, 31], async () => {
+    await pickInStrip(page, 'Rabbit ear');
+  });
+  await expect(steps(page)).toHaveCount(4);
+  await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Rabbit ear');
+});
+
 test('fold with the keyboard', async ({ page }) => {
   await page.keyboard.press('k');
   await expect(page.getByRole('status').getByText(/Pick what to move/)).toBeVisible();
