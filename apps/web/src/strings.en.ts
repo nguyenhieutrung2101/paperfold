@@ -99,6 +99,16 @@ export const strings = {
   pushIn: 'Push in: tuck the tip inside',
   pushSub: 'Pull out to wrap it, or run along to crease',
   stripHint: 'Scroll or 1–4',
+  // What a snapped drag lines up with.
+  targetNames: {
+    half: 'In half',
+    center: 'To the center',
+    corner: 'To the corner',
+    midpoint: 'To the middle',
+    'crease-point': 'To the crease',
+    'edge-to-edge': 'Edge to edge',
+    'edge-to-crease': 'Edge to the crease',
+  } as Record<string, string>,
   choicesLabel: 'Ways to make this fold',
   held: 'Held.',
   creased: 'Creased.',

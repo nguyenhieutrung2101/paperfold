@@ -15,7 +15,8 @@ pnpm e2e        # Playwright smoke tests
 ```
 
 Hover a corner to see which layers you'd pick up, then drag it to where it should land; the paper
-bends under the pointer. Push a folded edge in to tuck the tip inside (inside reverse fold), pull it
+bends under the pointer, and common folds (in half, to the center, edge to a crease) snap from well
+away, with faint dots showing where they land. Push a folded edge in to tuck the tip inside (inside reverse fold), pull it
 out to wrap it around (outside), or run along it to crease it. While the button is down, scroll (or
 Tab, 1–9) to pick how many layers or another way to fold; small pictures by the pointer show the
 choices. Shift takes every layer, Ctrl/Cmd folds freehand, double-click or C creases the whole fold.

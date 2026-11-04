@@ -1,6 +1,11 @@
 import {
   type CandidateKind,
   classifyStroke,
+  type FoldTarget,
+  foldTargets,
+  pickTarget,
+  type TargetContext,
+  targetContext,
   type FoldedEdge,
   foldedEdges,
   precreaseLines,
@@ -30,6 +35,9 @@ import { grabPoint, layersAt } from './plane.ts';
 /** Snap radius on screen: a fingertip covers more than a mouse pointer. */
 const SNAP_PX = 16;
 const SNAP_TOUCH_PX = 26;
+/** Common folds (in half, to the center, edge to crease…) pull from about twice as far. */
+const TARGET_PX = 44;
+const TARGET_TOUCH_PX = 60;
 const DECIDE_PX = 8;
 const NEAR_EDGE_PX = 10;
 /** A crease stroke that strays this far from its edge becomes a push or a pull. */
@@ -77,6 +85,9 @@ interface Gesture {
   lo: number;
   hi: number;
   value: number;
+  /** The common folds for this grab, worked out when the drag starts, and the one held. */
+  targets: FoldTarget[] | null;
+  target: FoldTarget | null;
   // Push
   pushEdge: FoldedEdge | null;
   push: PushFold | null;
@@ -138,11 +149,18 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
 
     // What snapping and gestures need from the current state, computed once per snapshot.
     let cachedFor: Snapshot | null = null;
-    let cache: { ctx: SnapContext; edges: FoldedEdge[]; precreases: Line2[]; surface: Surface } | null = null;
+    let cache: { ctx: SnapContext; edges: FoldedEdge[]; precreases: Line2[]; surface: Surface; targets: TargetContext } | null = null;
     const contextFor = (snap: Snapshot) => {
       if (snap !== cachedFor || !cache) {
         cachedFor = snap;
-        cache = { ctx: snapContext(snap), edges: foldedEdges(snap), precreases: precreaseLines(snap), surface: surfaceOf(snap) };
+        const surface = surfaceOf(snap);
+        cache = {
+          ctx: snapContext(snap),
+          edges: foldedEdges(snap),
+          precreases: precreaseLines(snap),
+          surface,
+          targets: targetContext(snap, surface),
+        };
       }
       return cache;
     };
@@ -172,6 +190,7 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
     };
 
     let g: Gesture | null = null;
+    let lastTargetKey: string | null = null;
     let holdKey = false;
     const touchHolds = new Map<number, Vec2>();
 
@@ -227,6 +246,23 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
         ...(preferred ? { preferred } : {}),
       };
     };
+    /** The common-fold landings worth showing: the dozen nearest the pointer. */
+    const nearTargets = (gg: Gesture): Vec2[] => {
+      if (!gg.targets || gg.freehand) return [];
+      const seen = new Set<string>();
+      const pts: Vec2[] = [];
+      for (const t of gg.targets) {
+        const k = `${Math.round(t.landing[0] * 10)},${Math.round(t.landing[1] * 10)}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        pts.push(t.landing);
+      }
+      return pts
+        .map((q) => ({ q, d: Math.hypot(q[0] - gg.pointer[0], q[1] - gg.pointer[1]) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 12)
+        .map((x) => x.q);
+    };
     /** Step to another alternative (scroll, Tab, 1–4, the strip, the pen's barrel). */
     const choose = (index: number) => {
       if (!g || (g.stage !== 'grab' && g.stage !== 'push')) return;
@@ -255,6 +291,9 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
           marks: g.marks,
           pointer: g.screen,
           away: awayFrom(g.screen.x, g.screen.y),
+          targets: g.stage === 'grab' ? nearTargets(g) : [],
+          guide: g.target?.guide ?? null,
+          snapKind: g.target?.kind ?? null,
         },
       });
     };
@@ -291,6 +330,7 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       if (g) return;
       el.setPointerCapture(ev.pointerId);
       const now = performance.now();
+      lastTargetKey = null;
       const zone = zoneOf(snap, p);
       // Pick up what the hover showed (the corner curl's layers), unless it was elsewhere.
       const hv = s.hover;
@@ -324,6 +364,8 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
         lo: 0,
         hi: 0,
         value: 0,
+        targets: null,
+        target: null,
         pushEdge: null,
         push: null,
       };
@@ -429,12 +471,28 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
           s.set({ drag: null });
           return;
         }
-        g.line = snapped.line;
+        // Refolding along a crease that's already there wins (unfold, refold). Otherwise the
+        // common folds pull from well away; then the Huzita–Justin snaps; then freehand.
+        let line = snapped.line;
+        let marks = snapped.marks;
+        g.target = null;
+        if (snapped.rule !== 0 && !g.freehand) {
+          g.targets ??= foldTargets(snapped.grab, contextFor(snap).targets, { onEdgeMm: snapRadius * 0.6 });
+          const targetRadius = (g.pointerType === 'touch' ? TARGET_TOUCH_PX : TARGET_PX) * px;
+          const pick = pickTarget(g.targets, p, targetRadius, lastTargetKey);
+          if (pick) {
+            g.target = pick.target;
+            line = pick.target.line;
+            marks = [snapped.grab, ...pick.target.marks];
+          }
+        }
+        lastTargetKey = g.target?.key ?? null;
+        g.line = line;
         g.grab = snapped.grab;
-        g.marks = snapped.marks;
+        g.marks = marks;
         // How far the fold has turned: where the grabbed point is now, relative to the line.
-        const x0 = signedDistance(snapped.line, snapped.grab);
-        const x = signedDistance(snapped.line, p);
+        const x0 = signedDistance(line, snapped.grab);
+        const x = signedDistance(line, p);
         const geo = Math.acos(Math.max(-1, Math.min(1, x0 === 0 ? 1 : x / x0)));
         // Lifted as if pinched; more when you move fast, close to flat when you slow down.
         const tilt = 0.06 + 0.5 * Math.min(1, g.speed / 260);

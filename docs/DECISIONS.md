@@ -347,3 +347,32 @@ doesn't:
 **Tested** on every reverse-fold fixture (inside and outside, nested, precreased, and a corner folded
 over both layers): every crease stays joined within the layer gaps at 47 points of the motion, and
 the landing matches the static frame exactly.
+
+## ADR-040 · Common folds snap from well away, and you can see them
+
+**Problem.** Snapping judged Huzita–Justin candidates only within about 16 px of where the grabbed
+point would land, and nothing showed where it could land. Most real folds go to a few places (in
+half, to the center, to a corner or the middle of an edge, an edge onto another edge or a crease),
+so a slightly-off drag gave a fold that was almost, but not quite, the one you meant. The soft
+22.5° angle snap made it look deliberate: a 45° fold that isn't quite in half.
+
+**Chose** (`intent/targets.ts`) to work out the common folds once when a drag starts, for the
+grabbed point (snapped to a nearby landmark as before):
+
+- **Point targets:** every corner you can pinch, the middle of the sheet when it's on top, the
+  middles of visible edges and creases, and where visible creases meet.
+- **Line targets, when the grab is on an edge (a corner is on two):** that edge onto every other
+  edge or visible crease (axiom 3; parallel lines fold midway). Only landings on the visible line
+  count. This is how cupboard and kite folds and edge-to-edge halves happen.
+
+Each target knows its fold line and where the grabbed point lands. The drag picks the nearest
+landing within 44 px (60 for touch), times the target's strength: corners, the center and halves
+pull hardest. A chosen target holds until the pointer is clearly elsewhere (hysteresis), so it never
+flickers between two.
+
+**Order:** refolding along an existing crease still wins (unfold, refold), then common folds, then
+the other Huzita–Justin snaps and the angle snap, then freehand (Ctrl/Cmd skips all snapping).
+
+**Shown:** faint dots at the dozen nearest landings while you drag, the target line highlighted for
+edge alignment, and the label names what you're doing: "In half", "To the center", "To the corner",
+"To the middle", "Edge to edge", "Edge to the crease".

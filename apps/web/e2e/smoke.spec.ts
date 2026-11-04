@@ -53,6 +53,21 @@ test('fold a corner to a corner, crease it, undo and redo', async ({ page }) => 
   await expect(page.locator('.step[aria-current="step"]')).toHaveText('2');
 });
 
+test('a sloppy corner drag still folds exactly in half', async ({ page }) => {
+  // Bottom-right corner let go about 11 mm short of the top-left corner.
+  await dragMm(page, [74, -74], [-67, 67], async () => {
+    await expect(page.locator('.strip')).toContainText('In half');
+  });
+  await expect(steps(page)).toHaveCount(2);
+  // The new crease runs exactly corner to corner (material corners (0,0) and (150,150)).
+  const exact = await page.evaluate(() => {
+    const snap = (window as unknown as { __paperfold: { useStore: { getState(): { view: { snapshot: { creases: Array<{ a: number[]; b: number[]; left: number | null; right: number | null }> } } } } } }).__paperfold.useStore.getState().view.snapshot;
+    const near = (p: number[], q: number[]) => Math.hypot(p[0]! - q[0]!, p[1]! - q[1]!) < 1e-6;
+    return snap.creases.some((c) => c.left !== null && c.right !== null && ((near(c.a, [0, 0]) && near(c.b, [150, 150])) || (near(c.a, [150, 150]) && near(c.b, [0, 0]))));
+  });
+  expect(exact).toBe(true);
+});
+
 test('a top layer joined at the spine: the strip offers both layers', async ({ page }) => {
   // Book fold: right edge over to the left edge.
   await dragMm(page, [75, 0], [-75, 0]);

@@ -34,6 +34,26 @@ function Ghost({ heightRef }: { readonly heightRef: React.RefObject<number> }) {
     <>
       {seg && <FoldLine a={seg[0]} b={seg[1]} height={y} kind={mountain ? 'mountain' : 'valley'} color={color} />}
       {!drag.resisting && <GhostOutline polygons={landing} height={y + 0.2} color={color} opacity={0.45} />}
+      {/* Where the common folds would land: faint dots you can aim for. */}
+      {!drag.resisting &&
+        drag.targets.map((p, i) => (
+          <mesh key={`t${i}`} position={[p[0], y, -p[1]]} rotation-x={-Math.PI / 2} renderOrder={5}>
+            <circleGeometry args={[1.8, 20]} />
+            <meshBasicMaterial color={color} transparent opacity={0.5} depthWrite={false} />
+          </mesh>
+        ))}
+      {drag.guide && (
+        <Line
+          points={[
+            [drag.guide[0][0], y, -drag.guide[0][1]],
+            [drag.guide[1][0], y, -drag.guide[1][1]],
+          ]}
+          color={color}
+          lineWidth={7}
+          transparent
+          opacity={0.3}
+        />
+      )}
       {drag.marks.map((p, i) => (
         <SnapRing key={i} at={p} height={y} radius={2.2} color={color} />
       ))}

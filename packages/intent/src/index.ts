@@ -3,6 +3,8 @@
  * what you meant; the kernel decides what's possible.
  *
  * - snap.ts: point-to-point folding snapped by the Huzita–Justin axioms 1–5 and 7.
+ * - targets.ts: the common folds for a grab (in half, to the center, to a corner or the
+ *   middle of an edge, an edge onto another edge or a crease), snapped to from well away.
  * - surface.ts: the model seen from above (what's on top, corners you can pinch) and where a
  *   press lands: a corner, a folded edge or the paper.
  * - gestures.ts: what a stroke means from where it starts; pushing a folded edge.
@@ -13,6 +15,7 @@ export * from './snap.ts';
 export * from './candidates.ts';
 export * from './gestures.ts';
 export * from './surface.ts';
+export * from './targets.ts';
 import type { SnapContext } from './snap.ts';
 import {
   applyPlaneIso,

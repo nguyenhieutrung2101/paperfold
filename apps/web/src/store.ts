@@ -1,4 +1,4 @@
-import type { CandidateKind } from '@paperfold/intent';
+import type { CandidateKind, TargetKind } from '@paperfold/intent';
 import type { Line2, ReasonCode, Snapshot, Transition, Vec2 } from '@paperfold/kernel';
 import type { MotionTransition, PaperMode } from '@paperfold/skin';
 import type { HandSide } from '@paperfold/steps';
@@ -51,6 +51,11 @@ export interface DragView {
   readonly pointer: { readonly x: number; readonly y: number };
   /** Screen direction away from the model: the strip goes that side, off the paper. */
   readonly away: { readonly x: number; readonly y: number };
+  /** Where the common folds would land (faint dots), the line an edge would land on, and the
+   * kind of common fold the drag has snapped to. */
+  readonly targets: readonly Vec2[];
+  readonly guide: readonly [Vec2, Vec2] | null;
+  readonly snapKind: TargetKind | null;
 }
 
 /** A crease stroke in progress: sharpness along a fold line. */

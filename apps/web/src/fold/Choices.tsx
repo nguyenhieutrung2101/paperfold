@@ -64,8 +64,10 @@ export function ChoiceStrip() {
   if (!drag || drag.resisting || drag.candidates.length === 0) return null;
   const sel = drag.candidates[drag.selected];
   if (!sel) return null;
-  // A plain fold of the top layer with nothing else to pick needs no explaining.
-  if (drag.candidates.length === 1 && sel.kind === 'fold-top') return null;
+  const snapName = drag.snapKind ? strings.targetNames[drag.snapKind] : null;
+  // A plain fold of the top layer with nothing else to pick needs no name, only what it lines up with.
+  const plain = drag.candidates.length === 1 && sel.kind === 'fold-top';
+  if (plain && !snapName) return null;
   return (
     <div className="strip" style={beside(drag.pointer, drag.away)} role="radiogroup" aria-label={strings.choicesLabel}>
       {drag.candidates.length > 1 && (
@@ -90,7 +92,8 @@ export function ChoiceStrip() {
         </div>
       )}
       <div className="strip-label">
-        <strong>{candidateName(sel.kind, sel.layers)}</strong>
+        {plain ? <strong>{snapName}</strong> : <strong>{candidateName(sel.kind, sel.layers)}</strong>}
+        {!plain && snapName && <span className="snap-name">{snapName}</span>}
         {drag.candidates.length > 1 && <span className="muted">{strings.stripHint}</span>}
       </div>
     </div>
