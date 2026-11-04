@@ -146,6 +146,10 @@ function kindOf(log: DesignLog, i: number): StepKind {
   switch (move.type) {
     case 'reverseFold':
       return 'reverse';
+    case 'squash':
+      return 'squash';
+    case 'petal':
+      return 'petal';
     case 'burnish':
       return 'crease';
     case 'turnOver':

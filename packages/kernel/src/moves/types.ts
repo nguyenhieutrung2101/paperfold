@@ -34,6 +34,26 @@ export interface ReverseFoldParams {
   readonly holds?: readonly Vec2[];
 }
 
+export interface SquashParams {
+  /** The hinge the flap turns on (usually a folded edge), as a line on the table plane. */
+  readonly hinge: PlaneLine;
+  /** A point on the flap. */
+  readonly seed: Vec2;
+  /** Layers of the flap under the seed; default all. */
+  readonly layers?: number | 'all';
+  readonly holds?: readonly Vec2[];
+}
+
+export interface PetalParams {
+  /** The line the petal lifts on, across the top layer(s), as a line on the table plane. */
+  readonly hinge: PlaneLine;
+  /** A point on the petal near its tip (the corner that lifts). */
+  readonly seed: Vec2;
+  /** Layers lifted under the seed; default 1. */
+  readonly layers?: number;
+  readonly holds?: readonly Vec2[];
+}
+
 export interface BurnishParams {
   /** The folded edge to crease, as a line on the table plane. */
   readonly line: PlaneLine;
@@ -57,6 +77,8 @@ export interface RotateParams {
 export type Move =
   | { readonly type: 'fold'; readonly params: FoldParams }
   | { readonly type: 'reverseFold'; readonly params: ReverseFoldParams }
+  | { readonly type: 'squash'; readonly params: SquashParams }
+  | { readonly type: 'petal'; readonly params: PetalParams }
   | { readonly type: 'burnish'; readonly params: BurnishParams }
   | { readonly type: 'turnOver'; readonly params: TurnOverParams }
   | { readonly type: 'rotate'; readonly params: RotateParams };
@@ -137,6 +159,46 @@ export type Transition =
       readonly flapBottom: readonly FaceId[];
       /** The spine through P, pointing from P into the flap's body. */
       readonly spine: Line2;
+      readonly parentOf: ReadonlyMap<FaceId, FaceId>;
+      readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
+      readonly newCreases: readonly EdgeId[];
+    }
+  | {
+      readonly kind: 'squash';
+      /** From O along the flap's own edge on the hinge. */
+      readonly hinge: Line2;
+      /** From O along the spine (the flap's folded edge) before the move. */
+      readonly spine: Line2;
+      /** From O halfway between the two: the new creases. */
+      readonly bisector: Line2;
+      readonly moving: readonly FaceId[];
+      /** Top side: by the hinge (turns over it), and by the spine (folds over the bisector, then the hinge). */
+      readonly tNear: readonly FaceId[];
+      readonly tFar: readonly FaceId[];
+      /** Bottom side: by the spine (folds over the bisector); by the hinge (stays). */
+      readonly bFar: readonly FaceId[];
+      readonly bNear: readonly FaceId[];
+      readonly parentOf: ReadonlyMap<FaceId, FaceId>;
+      readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
+      readonly newCreases: readonly EdgeId[];
+    }
+  | {
+      readonly kind: 'petal';
+      /** The hinge, from X to Y. */
+      readonly hinge: Line2;
+      readonly x: Vec2;
+      readonly y: Vec2;
+      /** The petal's tip before the move. */
+      readonly apex: Vec2;
+      readonly moving: readonly FaceId[];
+      /** The petal (turns over the hinge). */
+      readonly center: readonly FaceId[];
+      /** Its sides, by X and by Y (fold in on the kite lines, then turn with the petal). */
+      readonly sideX: readonly FaceId[];
+      readonly sideY: readonly FaceId[];
+      /** The layers under the sides (fold in on the kite lines). */
+      readonly innerX: readonly FaceId[];
+      readonly innerY: readonly FaceId[];
       readonly parentOf: ReadonlyMap<FaceId, FaceId>;
       readonly startPlacements: ReadonlyMap<FaceId, Rigid3>;
       readonly newCreases: readonly EdgeId[];

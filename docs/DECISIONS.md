@@ -464,3 +464,63 @@ APPROXIMATION: the shadow width, line weights, bevel and ridge heights, rest lif
 transmission are tuned by eye, not measured (like ADR-015's paper numbers). Flaps rest open
 rigidly about their hinge; real ones also curl a little.
 
+
+## ADR-044 · Moves that turn several parts at once: a layer-order solver
+
+**Context.** A plain fold turns one part of the paper about one line, and its new layer order
+follows from a simple rule (the moving stack reverses and lands on top). Squash and petal folds
+turn three to five parts about different lines at once, and a reverse fold into a flap that has
+other layers tucked inside it (the crane's neck going up between the wings) has no simple rule.
+
+**Chose** a small constraint solver (`state/solveOrder.ts`) and a general multi-part move
+(`moves/multi.ts`):
+
+- The move cuts the faces it creases, gives each part a rigid motion, and says which orders it
+  decides itself (`fixed`) and which it would prefer (`hint`).
+- Pairs that moved together keep their order (flipped if their part turned over); pairs among
+  unchanged faces keep theirs. Everything else is solved against the same flat-folding
+  constraints the validator checks: no three faces stacked in a loop, nothing between the two
+  sides of a fold it covers, nothing cutting through a flat crease, folds on one line nest
+  (Akitaya, Demaine & Ku). Each is an equality, a "not all equal" over three, or an equality of
+  products over ±1 variables, so unit propagation decides almost everything; the rest is a
+  depth-first search that tries the preferred value first and backs up on a contradiction.
+- Fold angles and placements are then re-derived from the creases and every touched invariant is
+  checked (fail closed), exactly as for a plain fold.
+
+General flat-foldability is NP-hard (Bern and Hayes); this only ever solves the pairs one move
+touches, starting from a valid state, which is small in practice (the crane's head: 8 moving
+layers, under 10 ms).
+
+**Reverse folds** now go through the same path. The Phase 1 rule's firm answers (the tip goes
+inside or outside the flap) are fixed; its guesses (where a layer that doesn't touch the flap
+sits) are only hints, and a layer joined flat to one of the flap's walls counts as part of that
+wall. The flap's spine is the fold nearest the middle of the stack that splits it into two
+consistent sides; its two faces needn't be adjacent (a narrowed flap has its folded-in sides
+between them). Where the rule is consistent, propagation reproduces it exactly: the Phase 1
+fixtures and property tests are unchanged.
+
+## ADR-045 · Squash and petal folds
+
+**Squash** (`moves/squash.ts`): the flap is what a fold along the hinge would pick up. Its spine
+meets the hinge at O; K is the line through O halfway between the flap's own edge on the hinge
+and the spine. The bottom side's part by the spine folds over K; the top side's part by the hinge
+turns over the hinge, and its part by the spine folds over K and then over the hinge. The spine
+ends on the hinge line and the flap spreads evenly to both sides.
+
+**Petal** (`moves/petal.ts`): the petal is the top layer's flat region on the grabbed side of the
+hinge, bounded by folded edges that meet the hinge at X and Y; the apex A is its corner farthest
+from the hinge, the kite lines run A–X and A–Y. The middle turns over the hinge; each side folds
+in on its kite line and turns with it; the layer behind each side folds in on the same kite line
+and stays. The sides end up on the petal's face, as kite folds put them (the creases forbid them
+between the petal and the layer it lands on).
+
+Both refuse what they can't do (a flap with nothing to squash, a petal without a folded edge on
+each side) with a reason, like every other move.
+
+**The crane** (`kernel/test/crane.ts`) folds from the square through the preliminary base (two
+squashes), kite precreases, the bird base (two petals), the narrowed legs, the neck and tail
+(inside reverse folds that go up between the wings) and the head; every state is fully
+validated. **Not yet:** folding the wings down flat. After the legs are narrowed, each wing is
+joined at its narrowed corners to the body's inner layers, so a rigid flat fold of the wing alone
+is refused as `joined`; real paper bends a little there. The crane is drawn with its wings up
+until partial-angle moves (next) let the wings spread instead.
