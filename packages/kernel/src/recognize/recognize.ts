@@ -18,6 +18,7 @@ export type MoveName =
   | 'inside-crimp'
   | 'outside-crimp'
   | 'rabbit-ear'
+  | 'swivel'
   | 'crease'
   | 'turn-over'
   | 'rotate'
@@ -181,7 +182,13 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
   if (made.length > 0 && flipped.length === 0 && unfolded.length === 0) {
     // A pleat: two parts moved, one turned over and one not (it went over twice).
     const motions = movedMotions(before, after, tol);
-    if (motions.length === 2 && motions.filter((m) => m.flips).length === 1) return { name: 'pleat', confidence: 0.85 };
+    if (motions.length === 2 && motions.filter((m) => m.flips).length === 1) {
+      // A swivel: the part past both lines turns about the point where they meet, on the paper.
+      const w = motions.find((m) => !m.flips)!.w;
+      const c = pivotOf(w);
+      if (c && onPaper(before, c, tol * 10)) return { name: 'swivel', confidence: 0.8 };
+      return { name: 'pleat', confidence: 0.85 };
+    }
     // A rabbit ear: two sides turned over and the ear turned twice, its four new creases
     // meeting at one point.
     if (motions.length === 3 && motions.filter((m) => m.flips).length === 2) {
@@ -226,6 +233,49 @@ export function recognize(before: KernelState, after: KernelState): Recognition 
 
   if (unfolded.length > 0 && made.length === 0 && flipped.length === 0) return { name: 'unfold', confidence: 0.9 };
   return { name: 'fold', confidence: 0.3 };
+}
+
+/**
+ * The point (table plane) a motion that keeps the paper's side up turns about, if it turns
+ * (a pure slide has none). World: x right, y up, table plane (x, -z).
+ */
+function pivotOf(w: Rigid3): Vec2 | null {
+  // Rotation about the vertical axis: [c 0 s; 0 1 0; -s 0 c].
+  const c = w.r[0];
+  const s = w.r[2];
+  if (Math.abs(1 - c) < 1e-6 && Math.abs(s) < 1e-6) return null;
+  // (I - R)·o = t in the x-z plane.
+  const a = 1 - c;
+  const b = -s;
+  const m = [a, b, s, a] as const; // rows of I - R restricted to (x, z)
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (Math.abs(det) < 1e-12) return null;
+  const x = (w.t[0] * m[3] - m[1] * w.t[2]) / det;
+  const z = (m[0] * w.t[2] - w.t[0] * m[2]) / det;
+  return [x, -z];
+}
+
+/** Is p on the model's paper, or within tol of its outline? */
+function onPaper(s: KernelState, p: Vec2, tol: number): boolean {
+  for (const [f, pl] of s.folded.placements) {
+    const poly = materialPolygon(s.cp, f).map((q) => {
+      const w = [pl.r[0] * q[0] + pl.r[1] * q[1] + pl.t[0], pl.r[6] * q[0] + pl.r[7] * q[1] + pl.t[2]];
+      return [w[0]!, -w[1]!] as Vec2;
+    });
+    let inside = true;
+    let sign = 0;
+    for (let i = 0; i < poly.length && inside; i++) {
+      const a = poly[i]!;
+      const b = poly[(i + 1) % poly.length]!;
+      const cr = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      if (cr / l > tol) sign = sign || 1;
+      if (cr / l < -tol) sign = sign || -1;
+      if ((cr / l > tol && sign < 0) || (cr / l < -tol && sign > 0)) inside = false;
+    }
+    if (inside) return true;
+  }
+  return false;
 }
 
 /** The distinct rigid motions the faces that moved went through (world, before to after). */

@@ -260,7 +260,8 @@ function rabbitEars(state: KernelState, p: Vec2, holds: readonly Vec2[]): Array<
 /**
  * Where a pleat or crimp along the drag's line folds back: the nearest precrease past the line
  * on the side that moves (within 20° of it, wholly on that side, with the grab point beyond
- * it), as you'd fold one on paper; with none, a parallel line halfway to the grab point.
+ * it; or meeting the line at one end, within 60°, for a swivel), as you'd fold one on paper;
+ * with none, a parallel line halfway to the grab point.
  */
 function pleatLine(state: KernelState, line: PlaneLine, seed: Vec2): PlaneLine | null {
   let l;
@@ -291,10 +292,13 @@ function pleatLine(state: KernelState, line: PlaneLine, seed: Vec2): PlaneLine |
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (len < 5) continue;
     const d: Vec2 = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
-    if (Math.abs(d[0] * l.d[1] - d[1] * l.d[0]) > Math.sin((20 * Math.PI) / 180)) continue;
     const da = signedDistance(l, a);
     const db = signedDistance(l, b);
-    if (Math.min(da, db) < 2) continue;
+    // A precrease that meets the line at one end makes a swivel (up to 60° off); otherwise it
+    // must run alongside (within 20°) and clear of the line.
+    const meets = Math.min(Math.abs(da), Math.abs(db)) <= 0.5;
+    if (Math.abs(d[0] * l.d[1] - d[1] * l.d[0]) > Math.sin(((meets ? 60 : 20) * Math.PI) / 180)) continue;
+    if (meets ? Math.max(da, db) < 2 || Math.min(da, db) < -0.5 : Math.min(da, db) < 2) continue;
     const pl = lineThrough(a, b);
     const s1 = signedDistance(pl, seed);
     const s0 = signedDistance(pl, foot);

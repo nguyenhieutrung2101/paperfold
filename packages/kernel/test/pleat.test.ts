@@ -26,6 +26,17 @@ describe('pleat', () => {
   });
 });
 
+describe('swivel', () => {
+  it('a pleat whose lines meet on the paper\'s edge swings the far part about that point', () => {
+    const s = createSheet({ sizeMm: 150 });
+    const r = run(s, { type: 'pleat', params: { first: { p: [10, -75], d: [0, 1] }, second: { p: [10, -75], d: [0.3, 1] }, seed: [60, 0] } });
+    expect(recognize(s, r.state).name).toBe('swivel');
+    // Lines that meet off the paper: still a pleat.
+    const r2 = run(s, { type: 'pleat', params: { first: { p: [10, 0], d: [0, 1] }, second: { p: [30, 0], d: [0.05, 1] }, seed: [60, 0] } });
+    expect(recognize(s, r2.state).name).toBe('pleat');
+  });
+});
+
 describe('crimp', () => {
   it('two reverse folds turn the tip of a closed flap and keep it closed', () => {
     const s = createSheet({ sizeMm: 100 });

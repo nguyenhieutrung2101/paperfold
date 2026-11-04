@@ -464,7 +464,8 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
       const from: Vec2 = [mid[0] + (seed[0] - mid[0]) * 0.5, mid[1] + (seed[1] - mid[1]) * 0.5];
       symbols.push({ kind: 'valley-arrow', from, to: reflectPoint(firstLine, from) });
     }
-    const caption: Caption = transition.kind === 'pleat' ? { kind: 'pleat' } : { kind: 'crimp', reverse: transition.reverse ?? 'inside' };
+    const caption: Caption =
+      transition.kind === 'pleat' ? (recognized.name === 'swivel' ? { kind: 'pleat', swivel: true } : { kind: 'pleat' }) : { kind: 'crimp', reverse: transition.reverse ?? 'inside' };
     return { ...base, line: firstLine, caption, symbols, hands: NO_HANDS };
   }
   if (move.type === 'burnish' || !transition || (transition.kind !== 'fold' && transition.kind !== 'reverse') || !line) {

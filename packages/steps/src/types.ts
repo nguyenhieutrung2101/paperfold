@@ -21,7 +21,7 @@ export type Caption =
   | { readonly kind: 'unfold'; readonly from: Place }
   | { readonly kind: 'reverse'; readonly reverse: 'inside' | 'outside'; readonly tip: Place }
   | { readonly kind: 'squash' }
-  | { readonly kind: 'pleat' }
+  | { readonly kind: 'pleat'; readonly swivel?: boolean }
   | { readonly kind: 'crimp'; readonly reverse: 'inside' | 'outside' }
   | { readonly kind: 'rabbit-ear'; readonly tip: Place }
   | { readonly kind: 'petal'; readonly tip: Place }

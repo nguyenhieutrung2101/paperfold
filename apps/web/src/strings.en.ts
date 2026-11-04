@@ -219,6 +219,7 @@ export const moveNames: Record<MoveName, string> = {
   'inside-crimp': 'Inside crimp',
   'outside-crimp': 'Outside crimp',
   'rabbit-ear': 'Rabbit ear',
+  swivel: 'Swivel fold',
   crease: 'Crease',
   'turn-over': 'Turn over',
   rotate: 'Rotate',
@@ -272,7 +273,9 @@ export function captionText(c: Caption): string {
     case 'squash':
       return 'Lift the flap, open it, and squash it flat.';
     case 'pleat':
-      return 'Pleat: valley fold on the first line, mountain fold on the second.';
+      return c.swivel
+        ? 'Swivel: valley fold on the first line; the paper past the second swings around the point where they meet.'
+        : 'Pleat: valley fold on the first line, mountain fold on the second.';
     case 'crimp':
       return c.reverse === 'inside' ? 'Crimp the point inside: two reverse folds.' : 'Crimp the point outside: two reverse folds.';
     case 'petal':
