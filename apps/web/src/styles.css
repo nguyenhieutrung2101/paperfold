@@ -732,3 +732,40 @@ input[type='range'] {
 .menu-items button {
   text-align: left;
 }
+
+/* Follow-along: the next step, top right. */
+.follow {
+  position: absolute;
+  right: 16px;
+  top: 72px;
+  width: 260px;
+  padding: 10px 12px;
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.follow.off {
+  outline: 2px solid #d97706;
+}
+
+.follow-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.follow-diagram svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  margin-top: 6px;
+}
+
+.follow p {
+  margin: 6px 0 0;
+}

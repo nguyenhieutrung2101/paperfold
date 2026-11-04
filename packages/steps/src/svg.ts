@@ -9,6 +9,8 @@ export interface DiagramOptions {
   /** A line under the title (step count, difficulty). */
   readonly subtitle?: string;
   readonly columns?: number;
+  /** The number the first step shows (a single step drawn on its own). */
+  readonly firstNumber?: number;
 }
 
 const CELL_W = 260;
@@ -39,23 +41,24 @@ function wrap(text: string, n: number): string[] {
  * symbols), its number and its sentence. One SVG; print it to get a PDF.
  */
 export function stepsSvg(steps: readonly Step[], o: DiagramOptions): string {
-  const cols = Math.max(1, o.columns ?? 3);
+  const cols = Math.max(1, Math.min(o.columns ?? 3, steps.length));
   const rows = Math.ceil(steps.length / cols);
+  const head = o.title ? HEAD : 0;
   const W = cols * CELL_W;
-  const H = HEAD + rows * CELL_H;
+  const H = head + rows * CELL_H;
   const parts: string[] = [];
   parts.push(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui, -apple-system, Segoe UI, sans-serif">`,
     `<rect width="${W}" height="${H}" fill="#ffffff"/>`,
     `<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker>`,
     `<marker id="hollow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.2"/></marker></defs>`,
-    `<text x="20" y="32" font-size="20" font-weight="700" fill="#111">${esc(o.title)}</text>`,
   );
+  if (o.title) parts.push(`<text x="20" y="32" font-size="20" font-weight="700" fill="#111">${esc(o.title)}</text>`);
   if (o.subtitle) parts.push(`<text x="20" y="54" font-size="13" fill="#555">${esc(o.subtitle)}</text>`);
   steps.forEach((s, i) => {
     const x0 = (i % cols) * CELL_W;
-    const y0 = HEAD + Math.floor(i / cols) * CELL_H;
-    parts.push(`<g transform="translate(${x0},${y0})">`, cell(s, i, o), '</g>');
+    const y0 = head + Math.floor(i / cols) * CELL_H;
+    parts.push(`<g transform="translate(${x0},${y0})">`, cell(s, i + (o.firstNumber ?? 1) - 1, o), '</g>');
   });
   parts.push('</svg>');
   return parts.join('\n');

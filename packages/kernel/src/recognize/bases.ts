@@ -1,7 +1,8 @@
 import { containsStrictly } from '../geometry/polygon.ts';
 import { applyPlaneIso } from '../geometry/rigid.ts';
 import type { Vec2 } from '../geometry/vec.ts';
-import { materialPolygon } from '../paper/creasePattern.ts';
+import { adjacency, getVertex, materialPolygon } from '../paper/creasePattern.ts';
+import { orderOf } from '../state/order.ts';
 import { applyMove } from '../moves/apply.ts';
 import type { Move } from '../moves/types.ts';
 import { createSheet } from '../state/create.ts';
@@ -84,39 +85,136 @@ const SYMS: ReadonlyArray<(p: Vec2) => Vec2> = [
   (p) => [1 - p[1], 1 - p[0]],
 ];
 
-/** Can `b` be moved onto `a` (rotation, translation, maybe a mirror) within tolerance? */
-function sameShape(a: readonly Vec2[], bs: readonly (readonly Vec2[])[], size: number): boolean {
-  const tol = 0.01 * size;
-  const ca = mean(a);
-  for (const b of bs) {
-    const cb = mean(b);
-    for (const mirror of [false, true]) {
-      // 2D Procrustes: the best rotation of b (mirrored or not) onto a about their centroids.
-      let sxx = 0;
-      let sxy = 0;
-      for (let i = 0; i < a.length; i++) {
-        const ax = a[i]![0] - ca[0];
-        const ay = a[i]![1] - ca[1];
-        const bx = b[i]![0] - cb[0];
-        const by = (mirror ? -1 : 1) * (b[i]![1] - cb[1]);
-        sxx += ax * bx + ay * by;
-        sxy += ay * bx - ax * by;
+/**
+ * Is `user` the same folded model as `target` (follow-along)? The same shape (as for bases),
+ * the same layer order wherever two points of the sheet land on each other, and every crease
+ * the target has made (so a precrease counts only once it's been creased). Folding from
+ * another corner of the square is fine.
+ */
+export function matchesState(user: KernelState, target: KernelState): boolean {
+  const sheet = squareSize(target);
+  const usheet = squareSize(user);
+  if (!sheet || !usheet || Math.abs(sheet.size - usheet.size) > 1e-6 * sheet.size) return false;
+  const tPts = sample(target, sheet.size, sheet.origin);
+  const tFaces = sampleFaces(target, sheet.size, sheet.origin);
+  if (!tPts || !tFaces) return false;
+  const tol = 0.01 * sheet.size;
+  for (const sym of SYMS) {
+    const uPts = sample(user, usheet.size, usheet.origin, sym);
+    const uFaces = sampleFaces(user, usheet.size, usheet.origin, sym);
+    if (!uPts || !uFaces) continue;
+    // Same side up: a model turned over (or folded the other way, mountain for valley) shows
+    // the other side, which isn't what the step shows.
+    const fit = fitShape(tPts, uPts, sheet.size, false);
+    if (!fit) continue;
+    // The same side of the paper up at every point (a mountain fold isn't its valley twin).
+    const tv = flatView(target)!;
+    const uv = flatView(user)!;
+    if (tFaces.some((f, i) => tv.frontUp.get(f) !== uv.frontUp.get(uFaces[i]!))) continue;
+    // Layer order where two sample points land together: the same, or all flipped if the
+    // model is turned over relative to the target.
+    let ok = true;
+    for (let i = 0; i < tPts.length && ok; i++) {
+      for (let j = i + 1; j < tPts.length && ok; j++) {
+        if (Math.hypot(tPts[i]![0] - tPts[j]![0], tPts[i]![1] - tPts[j]![1]) > tol) continue;
+        const to = tFaces[i] === tFaces[j] ? 0 : orderOf(target.folded.layerOrder, tFaces[i]!, tFaces[j]!);
+        const uo = uFaces[i] === uFaces[j] ? 0 : orderOf(user.folded.layerOrder, uFaces[i]!, uFaces[j]!);
+        if (to === undefined || uo === undefined || to === 0 || uo === 0) continue;
+        if ((fit.mirror ? -uo : uo) !== to) ok = false;
       }
-      const t = Math.atan2(sxy, sxx);
-      const c = Math.cos(t);
-      const s = Math.sin(t);
-      let worst = 0;
-      for (let i = 0; i < a.length && worst <= tol; i++) {
-        const bx = b[i]![0] - cb[0];
-        const by = (mirror ? -1 : 1) * (b[i]![1] - cb[1]);
-        const x = c * bx - s * by + ca[0];
-        const y = s * bx + c * by + ca[1];
-        worst = Math.max(worst, Math.hypot(x - a[i]![0], y - a[i]![1]));
-      }
-      if (worst <= tol) return true;
     }
+    if (!ok) continue;
+    if (!coversCreases(user, target, sheet, sym)) continue;
+    return true;
   }
   return false;
+}
+
+/** Every crease the target has made also exists in `user` (seen through the symmetry). */
+function coversCreases(user: KernelState, target: KernelState, sheet: Sheet, sym: (p: Vec2) => Vec2): boolean {
+  const adj = adjacency(target.cp);
+  const uadj = adjacency(user.cp);
+  const segs: Array<[Vec2, Vec2]> = [];
+  for (const c of user.cp.creases.values()) {
+    const ef = uadj.edgeFaces.get(c.id)!;
+    if (ef.left === null || ef.right === null) continue;
+    segs.push([getVertex(user.cp, c.v[0]), getVertex(user.cp, c.v[1])]);
+  }
+  const toUnit = (p: Vec2): Vec2 => [(p[0] - sheet.origin[0]) / sheet.size, (p[1] - sheet.origin[1]) / sheet.size];
+  const fromUnit = (p: Vec2): Vec2 => [sheet.origin[0] + p[0] * sheet.size, sheet.origin[1] + p[1] * sheet.size];
+  const tol = 1e-3 * sheet.size;
+  const onSome = (q: Vec2) =>
+    segs.some(([a, b]) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const l2 = dx * dx + dy * dy;
+      const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2));
+      return Math.hypot(a[0] + dx * t - q[0], a[1] + dy * t - q[1]) < tol;
+    });
+  for (const c of target.cp.creases.values()) {
+    const ef = adj.edgeFaces.get(c.id)!;
+    if (ef.left === null || ef.right === null || c.createdBy === null) continue;
+    const a = getVertex(target.cp, c.v[0]);
+    const b = getVertex(target.cp, c.v[1]);
+    for (const t of [0.25, 0.5, 0.75]) {
+      // The user's sheet point that plays this one's part.
+      const q = fromUnit(sym(toUnit([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])));
+      if (!onSome(q)) return false;
+    }
+  }
+  return true;
+}
+
+/** The face each sample point lies in. */
+function sampleFaces(state: KernelState, size: number, origin: Vec2, sym: (p: Vec2) => Vec2 = (p) => p): number[] | null {
+  const faces = [...state.cp.faces.keys()].map((f) => ({ f, poly: materialPolygon(state.cp, f) }));
+  const out: number[] = [];
+  for (const u of UNIT) {
+    const s = sym(u);
+    const m: Vec2 = [origin[0] + s[0] * size, origin[1] + s[1] * size];
+    const hit = faces.find((x) => containsStrictly(x.poly, m, state.tol));
+    if (!hit) return null;
+    out.push(hit.f);
+  }
+  return out;
+}
+
+/** Can `b` be moved onto `a` (rotation, translation, maybe a mirror) within tolerance? */
+function sameShape(a: readonly Vec2[], bs: readonly (readonly Vec2[])[], size: number): boolean {
+  return bs.some((b) => fitShape(a, b, size) !== null);
+}
+
+/** The rigid motion (maybe mirrored) taking `b` onto `a` within 1% of the sheet, if any. */
+function fitShape(a: readonly Vec2[], b: readonly Vec2[], size: number, mirrors = true): { readonly mirror: boolean } | null {
+  const tol = 0.01 * size;
+  const ca = mean(a);
+  const cb = mean(b);
+  for (const mirror of mirrors ? [false, true] : [false]) {
+    // 2D Procrustes: the best rotation of b (mirrored or not) onto a about their centroids.
+    let sxx = 0;
+    let sxy = 0;
+    for (let i = 0; i < a.length; i++) {
+      const ax = a[i]![0] - ca[0];
+      const ay = a[i]![1] - ca[1];
+      const bx = b[i]![0] - cb[0];
+      const by = (mirror ? -1 : 1) * (b[i]![1] - cb[1]);
+      sxx += ax * bx + ay * by;
+      sxy += ay * bx - ax * by;
+    }
+    const t = Math.atan2(sxy, sxx);
+    const c = Math.cos(t);
+    const sn = Math.sin(t);
+    let worst = 0;
+    for (let i = 0; i < a.length && worst <= tol; i++) {
+      const bx = b[i]![0] - cb[0];
+      const by = (mirror ? -1 : 1) * (b[i]![1] - cb[1]);
+      const x = c * bx - sn * by + ca[0];
+      const y = sn * bx + c * by + ca[1];
+      worst = Math.max(worst, Math.hypot(x - a[i]![0], y - a[i]![1]));
+    }
+    if (worst <= tol) return { mirror };
+  }
+  return null;
 }
 
 function mean(ps: readonly Vec2[]): Vec2 {

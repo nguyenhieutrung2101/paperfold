@@ -42,6 +42,17 @@ export const strings = {
   idealPaper: 'Ideal paper',
   relaxed: 'Relaxed folds',
   relaxedHelp: 'Let the folds open a little so the layers show. R toggles.',
+  sound: 'Sound',
+  soundHelp: 'Paper sounds; a light buzz on touch screens.',
+  mirror: 'Mirror folds',
+  mirrorHelp: 'Each fold is repeated on the other side of the middle. M toggles.',
+  mirrorRefused: "The mirrored fold doesn't fit here.",
+  foldAlong: 'Fold along',
+  followStep: (k: number, n: number) => `Step ${k} of ${n}`,
+  followOff: "That isn't this step yet. Undo and try again, or keep going.",
+  followDone: "That's the model. Every step done.",
+  stopFollowing: 'Stop',
+  followLabel: 'Follow along',
   lightbox: 'Lightbox',
   lightboxHelp: 'Light from below shows every layer. Hold L to look.',
   autoCrease: 'Auto-crease',
@@ -140,7 +151,7 @@ export const strings = {
   labDirection: 'Direction',
 
   // Keyboard help
-  keys: 'Drag a corner to fold. Push a folded edge to tuck the tip in. Hold the button and scroll for other ways. Run along a fold to crease it. Space holds. R relaxes the folds, L holds them up to the light. F turns over, Q and E rotate. K folds with the keyboard.',
+  keys: 'Drag a corner to fold. Push a folded edge to tuck the tip in. Hold the button and scroll for other ways. Run along a fold to crease it. Space holds. R relaxes the folds, L holds them up to the light, M mirrors your folds. F turns over, Q and E rotate. K folds with the keyboard.',
 } as const;
 
 /** One short line per kernel reason code: what happened, then what to try. */

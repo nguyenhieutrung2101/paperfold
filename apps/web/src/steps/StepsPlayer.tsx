@@ -5,6 +5,7 @@ import { FoldArrow, FoldLine, Hand, type HandPoseName, PaperMesh, type PaperLook
 import { buildFrame, motionLine, type MotionTransition, type SkinFrame, skinParamsFor, skinPoint } from '@paperfold/skin';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type Group, Matrix4, MOUSE, NeutralToneMapping, Vector3 } from 'three';
+import { foldAlong } from '../actions.ts';
 import type { PlayerStep } from '../kernel/api.ts';
 import { PRESETS } from '../presets.ts';
 import { moveNames, stepText, strings } from '../strings.en.ts';
@@ -341,9 +342,16 @@ export function StepsPlayer() {
       <aside className="steps-list" aria-label={strings.stepsList}>
         <div className="panel-head">
           <h2>{strings.stepsTitle}</h2>
-          <button className="ghost-btn" onClick={() => set({ mode: 'fold' })}>
-            {strings.backToFolding}
-          </button>
+          <span className="row">
+            {steps.length > 0 && (
+              <button className="ghost-btn" onClick={() => void foldAlong()}>
+                {strings.foldAlong}
+              </button>
+            )}
+            <button className="ghost-btn" onClick={() => set({ mode: 'fold' })}>
+              {strings.backToFolding}
+            </button>
+          </span>
         </div>
         {steps.length === 0 ? (
           <p className="muted">{strings.stepsEmpty}</p>

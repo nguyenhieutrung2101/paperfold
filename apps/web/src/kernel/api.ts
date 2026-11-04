@@ -30,6 +30,7 @@ import {
   type ReasonCode,
   recognize,
   recognizeBase,
+  matchesState,
   type BaseName,
   redo,
   type SheetOptions,
@@ -166,6 +167,12 @@ export interface PlayerStep {
   readonly transition: Transition | null;
   readonly base: BaseName | null;
   readonly repeat: { readonly of: number; readonly behind: boolean } | null;
+}
+
+/** One step of follow-along: what to do, and its diagram. */
+export interface FollowStep {
+  readonly text: string;
+  readonly svg: string;
 }
 
 export interface StepsView {
@@ -557,6 +564,41 @@ export class KernelHost {
 
   exportFold(title: string): string {
     return JSON.stringify(toFold(currentState(this.history), title), null, 1);
+  }
+
+  private follow: { readonly targets: readonly KernelState[]; readonly initial: KernelState } | null = null;
+
+  /**
+   * Follow-along (Phase 2): the current design's steps become targets, and folding starts
+   * again from its flat sheet. Each step comes with its sentence and its diagram.
+   */
+  followStart(handedness: HandSide): { readonly view: View; readonly steps: readonly FollowStep[] } {
+    const log = designLog(this.history);
+    const result = buildSteps(log, { handedness });
+    const text = (s: Step) => stepText({ caption: s.caption, base: s.base ?? null, repeat: s.repeat ?? null });
+    this.follow = { targets: result.steps.map((s) => s.after), initial: log.initial };
+    this.history = createHistory(log.initial);
+    this.exploreCache = null;
+    return {
+      view: this.view(),
+      steps: result.steps.map((s, i) => ({ text: text(s), svg: stepsSvg([s], { title: '', text: () => '', firstNumber: i + 1 }) })),
+    };
+  }
+
+  /** Which step the paper is at now: the furthest step it matches, if any. */
+  followCheck(index: number): { readonly index: number; readonly matched: boolean } {
+    if (!this.follow) return { index, matched: false };
+    const s = currentState(this.history);
+    const { targets, initial } = this.follow;
+    // The step asked for first, then any other (folding ahead, or undoing back).
+    if (targets[index] && matchesState(s, targets[index])) return { index: index + 1, matched: true };
+    for (let j = targets.length - 1; j >= 0; j--) if (j !== index && matchesState(s, targets[j]!)) return { index: j + 1, matched: true };
+    if (matchesState(s, initial)) return { index: 0, matched: true };
+    return { index, matched: false };
+  }
+
+  followStop(): void {
+    this.follow = null;
   }
 
   /** The build steps as files: a FOLD with a frame per step, and a diagram sheet (SVG). */

@@ -6,6 +6,7 @@ import {
   exportStepsFold,
   goTo,
   newSheet,
+  stopFollowing,
   openFold,
   openSteps,
   performMove,
@@ -165,6 +166,20 @@ function SidePanel() {
         </span>
       </label>
       <label className="toggle">
+        <input type="checkbox" checked={s.mirror} onChange={(e) => s.set({ mirror: e.target.checked })} />
+        <span>
+          {strings.mirror}
+          <small>{strings.mirrorHelp}</small>
+        </span>
+      </label>
+      <label className="toggle">
+        <input type="checkbox" checked={s.sound} onChange={(e) => s.set({ sound: e.target.checked })} />
+        <span>
+          {strings.sound}
+          <small>{strings.soundHelp}</small>
+        </span>
+      </label>
+      <label className="toggle">
         <input type="checkbox" checked={s.autoCrease} onChange={(e) => s.set({ autoCrease: e.target.checked })} />
         <span>
           {strings.autoCrease}
@@ -219,6 +234,32 @@ function ThumbSvg({ thumb }: { readonly thumb: Thumb }) {
         );
       })}
     </svg>
+  );
+}
+
+/** Follow-along: the step to fold next, its diagram, and how it's going. */
+function FollowPanel() {
+  const follow = useStore((s) => s.follow);
+  if (!follow) return null;
+  const n = follow.steps.length;
+  const done = follow.index >= n;
+  const step = follow.steps[Math.min(follow.index, n - 1)];
+  return (
+    <section className={`follow ${follow.off ? 'off' : ''}`} aria-label={strings.followLabel} aria-live="polite">
+      <div className="follow-head">
+        <strong>{done ? strings.followDone : strings.followStep(follow.index + 1, n)}</strong>
+        <button className="ghost-btn" onClick={() => void stopFollowing()}>
+          {strings.stopFollowing}
+        </button>
+      </div>
+      {!done && step && (
+        <>
+          <div className="follow-diagram" dangerouslySetInnerHTML={{ __html: step.svg }} />
+          <p>{step.text}</p>
+          {follow.off && <p className="warn">{strings.followOff}</p>}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -339,6 +380,9 @@ function useKeyboard() {
       } else if (!mod && e.key.toLowerCase() === 'r') {
         const st = useStore.getState();
         st.set({ relaxed: !st.relaxed });
+      } else if (!mod && e.key.toLowerCase() === 'm') {
+        const st = useStore.getState();
+        st.set({ mirror: !st.mirror });
       } else if (!mod && e.key.toLowerCase() === 'l' && !e.repeat) {
         // Hold L to look; a quick tap leaves it on (and another turns it off).
         lDownAt = performance.now();
@@ -396,6 +440,7 @@ export function App() {
       <TopBar />
       {mode === 'fold' && <SidePanel />}
       {mode === 'fold' && <Timeline />}
+      {mode === 'fold' && <FollowPanel />}
       <Hints />
     </div>
   );

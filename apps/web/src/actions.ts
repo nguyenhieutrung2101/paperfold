@@ -1,5 +1,7 @@
 import type { Line2, Move, Transition, Vec2 } from '@paperfold/kernel';
 import { motionLine } from '@paperfold/skin';
+import { mirrorAxis, mirrorMove } from './mirror.ts';
+import { cue } from './sound.ts';
 import { kernel } from './kernel/client.ts';
 import type { PerformResult, Refusal } from './kernel/api.ts';
 import { PRESETS } from './presets.ts';
@@ -19,7 +21,8 @@ export async function newSheet(): Promise<void> {
     frontColor: s.frontColor,
     backColor: s.backColor,
   });
-  useStore.getState().set({ view, active: null, modelMotion: null, ghost: null, drag: null, glow: new Set(), stepsView: null });
+  if (s.follow) await kernel().followStop();
+  useStore.getState().set({ view, active: null, modelMotion: null, ghost: null, drag: null, glow: new Set(), stepsView: null, follow: null });
 }
 
 /**
@@ -31,6 +34,7 @@ export function refused(r: Pick<Refusal, 'reason' | 'blockers'>, at?: { x: numbe
   const now = performance.now();
   const again = st.lastRefusal !== null && st.lastRefusal.reason === r.reason && now - st.lastRefusal.at < 30_000;
   st.set({ glow: new Set(r.blockers), lastRefusal: { reason: r.reason, at: now } });
+  cue('refuse', lastTouch());
   if (at && again) st.showHint(reasonHints[r.reason], at.x, at.y);
   window.setTimeout(() => {
     if (useStore.getState().glow.size > 0) useStore.getState().set({ glow: new Set() });
@@ -41,6 +45,8 @@ function landed(r: Extract<PerformResult, { ok: true }>, fromTheta = 0): void {
   const tr: Transition = r.transition;
   const st = useStore.getState();
   const base = { view: r.view, stepsView: null, lastRefusal: null };
+  if (tr.kind === 'turnOver') cue('turn', lastTouch());
+  else if (tr.kind !== 'burnish' && tr.kind !== 'rotate') cue('fold', lastTouch());
   if (tr.kind === 'fold' || tr.kind === 'reverse' || tr.kind === 'squash' || tr.kind === 'petal') {
     st.set({
       ...base,
@@ -62,6 +68,7 @@ export async function commitMove(
   extras: { grab?: Vec2; holds?: readonly Vec2[] } = {},
   fromTheta = 0,
 ): Promise<boolean> {
+  const before = useStore.getState().view?.snapshot ?? null;
   const r = await kernel().perform(move, extras);
   if (!r.ok) {
     refused(r, at);
@@ -69,7 +76,23 @@ export async function commitMove(
   }
   landed(r, fromTheta);
   advanceFirstRun(1);
-  if (useStore.getState().autoCrease && (move.type === 'fold' || move.type === 'reverseFold' || move.type === 'squash' || move.type === 'petal')) await creaseActive();
+  const foldLike = move.type === 'fold' || move.type === 'reverseFold' || move.type === 'squash' || move.type === 'petal';
+  if (useStore.getState().autoCrease && foldLike) await creaseActive();
+  void checkFollow();
+  // The mirror tool: the same fold on the other side of the model's middle line.
+  if (useStore.getState().mirror && foldLike && before) {
+    const m = mirrorMove(move, mirrorAxis(before));
+    if (m) {
+      await new Promise((res) => window.setTimeout(res, 520));
+      const r2 = await kernel().perform(m);
+      if (r2.ok) {
+        landed(r2);
+        if (useStore.getState().autoCrease) await creaseActive();
+      } else {
+        useStore.getState().showHint(strings.mirrorRefused, at.x, at.y);
+      }
+    }
+  }
   return true;
 }
 
@@ -89,7 +112,9 @@ export async function creaseActive(at?: { x: number; y: number }): Promise<void>
     stepsView: null,
     active: current && current.key === active.key ? { ...current, creasedAt: performance.now() } : current,
   });
+  cue('crease', lastTouch());
   advanceFirstRun(2);
+  void checkFollow();
 }
 
 /** A finger ran along a fold from `from` to `to` (mm along the line): crease just that part. */
@@ -101,8 +126,14 @@ export async function creaseStroke(line: Line2, from: number, to: number, amount
     return;
   }
   useStore.getState().set({ view: r.view, stepsView: null });
+  cue('crease', lastTouch());
   advanceFirstRun(2);
+  void checkFollow();
 }
+
+let touchInput = false;
+if (typeof window !== 'undefined') window.addEventListener('pointerdown', (e) => (touchInput = e.pointerType === 'touch'), true);
+const lastTouch = () => touchInput;
 
 export async function performMove(move: Move): Promise<void> {
   const r = await kernel().perform(move);
@@ -111,21 +142,54 @@ export async function performMove(move: Move): Promise<void> {
     return;
   }
   landed(r);
+  void checkFollow();
+}
+
+/** Follow-along: fold the current design's steps yourself, from its flat sheet. */
+export async function foldAlong(): Promise<void> {
+  const r = await kernel().followStart(useStore.getState().handedness);
+  useStore.getState().set({
+    view: r.view,
+    follow: { steps: r.steps, index: 0, off: false },
+    mode: 'fold',
+    stepsView: null,
+    active: null,
+    modelMotion: null,
+    drag: null,
+  });
+}
+
+export async function stopFollowing(): Promise<void> {
+  await kernel().followStop();
+  useStore.getState().set({ follow: null });
+}
+
+/** After every change: is the paper at the next step (or another one)? */
+async function checkFollow(): Promise<void> {
+  const f = useStore.getState().follow;
+  if (!f) return;
+  const r = await kernel().followCheck(f.index);
+  const now = useStore.getState().follow;
+  if (!now) return;
+  useStore.getState().set({ follow: { ...now, index: r.index, off: !r.matched } });
 }
 
 export async function undo(): Promise<void> {
   const view = await kernel().undo();
   useStore.getState().set({ view, active: null, modelMotion: null, ghost: null, drag: null, stepsView: null });
+  void checkFollow();
 }
 
 export async function redo(): Promise<void> {
   const view = await kernel().redo();
   useStore.getState().set({ view, active: null, modelMotion: null, ghost: null, drag: null, stepsView: null });
+  void checkFollow();
 }
 
 export async function goTo(id: number): Promise<void> {
   const view = await kernel().goTo(id);
   useStore.getState().set({ view, active: null, modelMotion: null, ghost: null, drag: null, stepsView: null });
+  void checkFollow();
 }
 
 /** Open the build steps for the current design. */

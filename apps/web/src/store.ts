@@ -3,7 +3,7 @@ import type { Line2, ReasonCode, Snapshot, Transition, Vec2 } from '@paperfold/k
 import type { MotionTransition, PaperMode } from '@paperfold/skin';
 import type { HandSide } from '@paperfold/steps';
 import { create } from 'zustand';
-import type { CandidateStatus, DragPreview, StepsView, View } from './kernel/api.ts';
+import type { CandidateStatus, DragPreview, FollowStep, StepsView, View } from './kernel/api.ts';
 import { PRESETS, type PresetId } from './presets.ts';
 
 export type Theme = 'light' | 'dark';
@@ -138,6 +138,12 @@ export interface Paperstate {
   /** On the lightbox: light from below shows the layers (the button toggles it, L holds it). */
   readonly lightbox: boolean;
   readonly lightboxHeld: boolean;
+  /** Paper sounds and touch haptics. */
+  readonly sound: boolean;
+  /** The mirror tool: each fold is repeated across the model's middle line (M). */
+  readonly mirror: boolean;
+  /** Follow-along: the steps, the one to do next, and whether the last move went off course. */
+  readonly follow: { readonly steps: readonly FollowStep[]; readonly index: number; readonly off: boolean } | null;
   readonly peek: PeekView | null;
   /** Set while a drag is live: pick alternative i (the strip, for touch). */
   readonly choose: ((i: number) => void) | null;
@@ -197,6 +203,9 @@ export const useStore = create<Paperstate & PaperActions>((set) => ({
   relaxed: false,
   lightbox: false,
   lightboxHeld: false,
+  sound: true,
+  mirror: false,
+  follow: null,
   peek: null,
   choose: null,
   handedness: 'right',

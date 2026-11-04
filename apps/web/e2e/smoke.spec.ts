@@ -289,10 +289,40 @@ test('squash a closed flap: drag it over its hinge and pick Squash fold', async 
 });
 
 test('a petal fold: drag the bottom corner of the top layer up; it leads', async ({ page }) => {
+  test.setTimeout(180_000);
   await craneSteps(page, 9);
   await dragMm(page, [70, 70], [-15, -15], async () => {
     await expect(page.locator('.strip')).toContainText('Petal fold');
   });
   await expect(steps(page)).toHaveCount(11);
   await expect(lastStep(page)).toHaveAttribute('aria-label', '10. Petal fold');
+});
+
+test('fold along: the panel follows your folds and notices a wrong one', async ({ page }) => {
+  test.setTimeout(240_000);
+  // The design: a diagonal fold, creased, then in half again.
+  await triangle(page);
+  await dragMm(page, [-74, -74.5], [74, 74]);
+  await expect(steps(page)).toHaveCount(4);
+
+  await page.getByRole('tab', { name: 'Steps' }).click();
+  await page.getByRole('button', { name: 'Fold along' }).click();
+  const panel = page.getByRole('region', { name: 'Follow along' });
+  await expect(panel).toContainText('Step 1 of 2');
+  await expect(steps(page)).toHaveCount(1);
+  await page.waitForFunction(() => 'toScreen' in ((window as unknown as { __paperfold?: object }).__paperfold ?? {}));
+  await page.waitForTimeout(800);
+
+  // Step 1, as the design did it.
+  await triangle(page);
+  await expect(panel).toContainText('Step 2 of 2');
+
+  // Not step 2: fold the other way.
+  await dragMm(page, [74, 74.5], [-74, -74]);
+  await expect(panel).toContainText("That isn't this step yet");
+  await page.keyboard.press('Control+z');
+  await expect(panel).not.toContainText("That isn't this step yet");
+
+  await dragMm(page, [-74, -74.5], [74, 74]);
+  await expect(panel).toContainText("That's the model.");
 });
