@@ -3,8 +3,8 @@
 Fold origami in realistic 3D with your own hands, in the browser. Every fold is checked against
 real paper by an exact origami kernel; the paper looks and moves like paper.
 
-**Status: Phase 1 (an MVP that feels right).** See [docs/PHASE-1.md](docs/PHASE-1.md) for what works,
-what's approximated and what's next.
+**Status: Phase 2 (breadth and teaching).** See [docs/PHASE-2.md](docs/PHASE-2.md) for what works,
+what's approximated and what's next ([docs/PHASE-1.md](docs/PHASE-1.md) for the MVP).
 
 ```sh
 pnpm install
@@ -25,6 +25,13 @@ can see the layers. F turns the model over, Q and E rotate it, Cmd/Ctrl+Z undoes
 keyboard. Drag the table to orbit. **Steps** plays your design back as build steps with hands,
 symbols and captions. The **Bend lab** is the paper-realism playground.
 
+Phase 2 adds squash, petal, pleat, crimp, swivel and rabbit ear folds; they appear in the same
+choice strip while you drag. Hold Alt while dragging to raise or lower a flap about its line, and
+release with Alt to leave it standing; [ and ] open and close the last fold. Hold L for the
+lightbox and press M to mirror each fold across the middle. Steps name the traditional bases,
+mark repeats and rate difficulty. "Fold along" checks your folding against a design step by step,
+and Export writes diagrams (SVG, print for PDF) and FOLD files with every step.
+
 ## Layout
 
 ```
@@ -36,7 +43,7 @@ packages/skin     soft, thick, two-sided paper geometry from the kernel's state 
 packages/render   three.js / React Three Fiber: paper material, studio, overlays, hands
 packages/steps    build steps from the op log: names, captions as data, symbols, hands, replay check
 apps/web          the app: worker host, store, fold view, steps player, bend lab, UI, strings.en.ts
-docs/             PLAN, ARCHITECTURE, DECISIONS (ADRs), PHASE-0 and PHASE-1 notes
+docs/             PLAN, ARCHITECTURE, DECISIONS (ADRs), PHASE-0, PHASE-1 and PHASE-2 notes
 ```
 
 ## Docs

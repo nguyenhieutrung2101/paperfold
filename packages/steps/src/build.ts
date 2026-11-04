@@ -427,13 +427,14 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
       const dir: Vec2 = [transition.hinge.d[0] - transition.spine.d[0], transition.hinge.d[1] - transition.spine.d[1]];
       const dl = Math.hypot(dir[0], dir[1]) || 1;
       symbols.push({ kind: 'push-arrow', at: tip, dir: [dir[0] / dl, dir[1] / dl] });
-      return { ...base, line: hinge, caption: { kind: 'squash' }, symbols, hands: NO_HANDS };
+      return { ...base, line: hinge, caption: { kind: 'squash' }, symbols, hands: multiHands(before, log.states[first + 1]!, transition, tip, 'push', handedness) };
     }
     // Lift the tip on the hinge; the sides fold in along the kite lines.
     const kites = [transition.x, transition.y].map((p) => extentAlong(lineThrough(transition.apex, p), polys)).filter((x): x is [Vec2, Vec2] => x !== null);
     for (const k of kites) symbols.push({ kind: 'valley-line', a: k[0], b: k[1] });
     symbols.push({ kind: 'valley-arrow', from: transition.apex, to: reflectPoint(transition.hinge, transition.apex) });
-    return { ...base, line: hinge, caption: { kind: 'petal', tip: { ...placeOf(before, transition.apex, hull), what: 'tip' } }, symbols, hands: NO_HANDS };
+    const hands = multiHands(before, log.states[first + 1]!, transition, transition.apex, 'pinch', handedness);
+    return { ...base, line: hinge, caption: { kind: 'petal', tip: { ...placeOf(before, transition.apex, hull), what: 'tip' } }, symbols, hands };
   }
   if (transition && transition.kind === 'rabbitEar') {
     // Valley lines on the two base bisectors and the ear's foot, a mountain on the tip's
@@ -446,7 +447,8 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
       { kind: 'mountain-line', a: tip, b: center },
       { kind: 'valley-arrow', from: tip, to: reflectPoint(lineThrough(sideA, center), tip) },
     ];
-    return { ...base, line: lineThrough(sideA, center), caption: { kind: 'rabbit-ear', tip: { ...placeOf(before, tip, hull), what: 'corner' } }, symbols, hands: NO_HANDS };
+    const hands = multiHands(before, log.states[first + 1]!, transition, tip, 'pinch', handedness);
+    return { ...base, line: lineThrough(sideA, center), caption: { kind: 'rabbit-ear', tip: { ...placeOf(before, tip, hull), what: 'corner' } }, symbols, hands };
   }
   if (transition && (transition.kind === 'pleat' || transition.kind === 'crimp')) {
     // Valley on the first line, mountain on the second, and an arrow taking the far part over.
@@ -466,7 +468,8 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
     }
     const caption: Caption =
       transition.kind === 'pleat' ? (recognized.name === 'swivel' ? { kind: 'pleat', swivel: true } : { kind: 'pleat' }) : { kind: 'crimp', reverse: transition.reverse ?? 'inside' };
-    return { ...base, line: firstLine, caption, symbols, hands: NO_HANDS };
+    const seed = 'seed' in move.params ? (move.params.seed as Vec2) : firstLine.p;
+    return { ...base, line: firstLine, caption, symbols, hands: multiHands(before, log.states[first + 1]!, transition, seed, 'pinch', handedness) };
   }
   if (move.type === 'burnish' || !transition || (transition.kind !== 'fold' && transition.kind !== 'reverse') || !line) {
     // A standalone crease: run a fingernail along the fold where it lies on the model.
@@ -586,6 +589,61 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
       crease,
       liftModel: mountain,
     },
+  };
+}
+
+/**
+ * Hands for a move whose parts turn about several lines (squash, petal, pleat, crimp, rabbit
+ * ear): one hand at the point that leads the motion (pushing a squash's spine down, pinching
+ * the others), following that bit of paper; the other pressing paper that stays, on the far
+ * side of the model's middle from it.
+ */
+function multiHands(
+  before: KernelState,
+  after: KernelState,
+  tr: Transition,
+  grab: Vec2,
+  pose: 'pinch' | 'push',
+  handedness: HandSide,
+): HandPlan {
+  const outlines = movingOutlines(after, tr);
+  if (outlines.length === 0 || !('startPlacements' in tr)) return NO_HANDS;
+  let face = outlines.find((o) => containsStrictly(o.poly, grab, before.tol))?.face;
+  if (face === undefined) {
+    let best = Infinity;
+    for (const o of outlines) {
+      for (const q of o.poly) {
+        const d = Math.hypot(q[0] - grab[0], q[1] - grab[1]);
+        if (d < best) {
+          best = d;
+          face = o.face;
+        }
+      }
+    }
+  }
+  const start = tr.startPlacements.get(face!);
+  if (!start) return NO_HANDS;
+  const material = applyPlaneIso(invertPlaneIso(planeIsoOf(start)), grab);
+  const view = flatView(before);
+  let hold: Vec2 | null = null;
+  if (view) {
+    const all = view.faceIds.flatMap((f) => view.poly.get(f)!);
+    const c = centroidOf(all);
+    const onPaper = (p: Vec2) => view.faceIds.some((f) => containsStrictly(view.poly.get(f)!, p, before.tol));
+    const moved = (p: Vec2) => outlines.some((o) => containsStrictly(o.poly, p, before.tol));
+    for (const t of [1.3, 1.0, 1.6, 0.8, 1.9, 0.6]) {
+      const p: Vec2 = [grab[0] + (c[0] - grab[0]) * t, grab[1] + (c[1] - grab[1]) * t];
+      if (onPaper(p) && !moved(p)) {
+        hold = p;
+        break;
+      }
+    }
+  }
+  return {
+    folding: { hand: handedness, pose, at: grab, face: face!, material },
+    holding: hold ? { hand: handedness === 'right' ? 'left' : 'right', pose: 'hold', at: hold } : null,
+    crease: null,
+    liftModel: false,
   };
 }
 

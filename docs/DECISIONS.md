@@ -524,3 +524,117 @@ validated. **Not yet:** folding the wings down flat. After the legs are narrowed
 joined at its narrowed corners to the body's inner layers, so a rigid flat fold of the wing alone
 is refused as `joined`; real paper bends a little there. The crane is drawn with its wings up
 until partial-angle moves (next) let the wings spread instead.
+
+## ADR-046 · Teaching: bases, repeats, difficulty, diagrams, follow-along
+
+**Bases** (`recognize/bases.ts`): a state is compared with canonical kite, blintz, preliminary,
+waterbomb and bird bases built by the kernel itself. Both are sampled at 81 points of the sheet,
+each point's folded position is found, and the two point sets are matched by 2D Procrustes (with
+and without a mirror, over the square's 8 symmetries), within 1% of the sheet's size. Matching
+folded positions, not crease patterns, means a base folded in any order, or turned over, is
+still that base.
+
+**Follow-along** uses the same samples, stricter: no mirror, the same side of the paper up at
+every sample, the same layer order where samples coincide, and every crease the step should have
+made present. The panel advances when your paper matches the next step (or any later one), and
+says so when it matches none.
+
+**Repeats** (`steps/build.ts`): a step that does what an earlier one did is marked "repeat
+behind" (the same line mirrored by the turn-over between them) or "repeat on the other side"
+(the earlier step's model is symmetric across a middle line, the lines are mirror images, and
+the regions they move overlap by at least 80%). Exact region matching was too strict for folds
+that land a hair apart.
+
+**Difficulty**: weighted moves (fold 1, reverse 3, squash 3, petal 4, crimp 4, ...) plus a term
+for deep stacks, mapped to 1 (very easy) to 5 (complex). It is a guide, not a measurement.
+
+**Diagrams**: the steps as one SVG in the Yoshizawa–Randlett vocabulary (valley dashed, mountain
+dash-dot, fold, fold-and-unfold, push, turn-over and rotate symbols), each drawn from above
+before its step; printing it gives the PDF. **FOLD export with steps**: one frame per step.
+
+## ADR-047 · Timeline branches, the mirror tool, sound and haptics
+
+- **Branches**: history was already a tree; the timeline now shows where you branched and lets
+  you go back to either branch.
+- **Mirror tool (M)**: after a fold-like move, the same move mirrored across the model's middle
+  line (found from its footprint) is made too, if it's a different move and the kernel accepts
+  it; if not, the first fold stays and a hint says why.
+- **Sound and haptics**: synthesized with Web Audio (filtered noise and a low thump: no files),
+  plus a short vibration on touch devices. APPROXIMATION: the sounds resemble paper; they are
+  not recordings.
+
+## ADR-048 · Pleat, crimp and swivel
+
+**Pleat** (`moves/pleat.ts`): two folds made as one step. Fold everything past the first line
+over (valley), then fold the part past the second line back; it now lies on top, so the second
+fold takes exactly the layers the first one moved. Both folds are validated as usual; the step
+reports one combined transition (the strip turns over the first line, the far part over both).
+
+**Crimp**: a pleat through both sides of a closed flap at once, through the multi-motion move and
+the solver (ADR-044). The flap's two sides are split at its innermost folded edge across the
+first line. Geometry alone is a pleat; the stacking makes it a crimp. Each side zigzags (near
+part, strip, far part), and its near part runs past the second line, so the far part can't come
+back over it. Inside, the strip tucks between the near sides and the far part between the
+strip's; outside, each wraps around the one before. Those pairs are fixed, not hinted, so a kind
+the lines don't allow is refused rather than becoming a pleat of the whole flap. (Lines leaning
+toward the tip allow only an inside crimp; lines leaning back over the flap, only an outside
+one.) Named from what changed: a flipped stretch of folded edge with an inside reverse end and
+an outside one.
+
+**Swivel**: a pleat whose two lines meet at a point on the paper, so the part past them turns
+about that point instead of sliding. Same move; the recognizer names it from the motion's pivot.
+
+From the pointer: while a fold is dragged, the strip also offers Pleat (and Inside/Outside crimp
+where the flap could be reverse folded on that line). The second line is a precrease past the
+drag's line on the side that moves (within 20° of it; or meeting it at one end, within 60°, for a
+swivel), as you'd pleat on paper; with none, a parallel line halfway to the grab point.
+
+## ADR-049 · Rabbit ear
+
+`moves/rabbit.ts`. On a triangle with incenter I, the creases are the three bisectors and the
+perpendicular from I to the side the ear lies toward. The base part (around the foot of I on the
+base) stays; the side away from the ear turns over its bisector and runs on into the ear's top
+half; the other side turns over its bisector; the ear's other half turns over that bisector and
+back over the perpendicular. Checking the creases by hand, the ear has to lie between the two
+sides (on top it would wrap one side's folded edge); the solver finds the same. The paper is
+what a fold along the base would pick up. One degree-4 vertex at I, so the motion is a one-
+parameter rigid motion (closed form, like the petal's sides).
+
+From the pointer: pressing near a corner of the model offers Rabbit ear on the triangle it makes
+with its two neighbours on the model's outline; the ear lies toward the side the drag goes.
+
+## ADR-050 · Partial angles: flaps left standing open
+
+The brief puts partial-angle hinge moves first in Phase 2. A general non-flat kernel (arbitrary
+fold angles everywhere, 3D collision of every face, layer order where nothing is flat) is a large
+step, and most of what folders do with partial angles is leave one flap standing (a box wall, a
+crane's wing, an ear). So:
+
+- The kernel's state stays flat: it is the paper with every fold made. A **pose** says a flap of
+  it stands open by an angle about its hinge, turned up toward the viewer.
+- A flap may stand open only if it is free: nothing lies on it, and it is joined to the rest only
+  along its hinge, so it turns rigidly. Open flaps must not run into each other, where they stand
+  or on the way (checked every 10°, the paper as thin plates).
+- A fold takes `angleDeg`; below 180 its flap is left standing (valley folds only). Folds
+  elsewhere are checked against standing flaps. A fold that would move a standing flap, and
+  every other move, is refused as `posed` (lay it down first). Rotating the model takes the
+  flaps along.
+- FOLD export draws standing flaps where they stand (partial fold angles) and round-trips them;
+  the skin turns their faces up about the hinge.
+
+In the app: hold Alt during a drag to hold the fold line and raise or lower the flap about it,
+and release with Alt to leave it standing; [ opens the last fold by 15° and ] closes it (180°
+lays it flat). History can amend the last move in place, so this doesn't leave a branch per
+keypress.
+
+**Not covered**: flaps that aren't free. The crane's wings are joined at their narrowed corners
+to the body's inner layers (ADR-045), so they can't spread rigidly either; that needs bending.
+
+## ADR-051 · Hands for the multi-part moves
+
+Squash, petal, pleat, crimp and rabbit ear steps now get hands. One hand leads the move, at the
+point it is about: it pushes a squash's spine down, and pinches the petal's tip, the pleat's far
+part, or the rabbit ear's tip. That hand follows that bit of paper through the motion. The other
+hand presses paper that stays, across the model's middle from the first. APPROXIMATION: the
+hands show where to push and hold, not every finger movement a real squash or petal needs
+(opening the flap first, coaxing the sides in).

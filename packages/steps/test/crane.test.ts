@@ -21,6 +21,14 @@ describe('the crane, as build steps', () => {
     expect(verified).toBe(true);
   });
 
+  it('shows hands for the squashes and petals: one leading the move, one holding', () => {
+    for (const s of steps.filter((x) => x.kind === 'squash' || x.kind === 'petal')) {
+      expect(s.hands.folding).not.toBeNull();
+      expect(s.hands.folding!.pose).toBe(s.kind === 'squash' ? 'push' : 'pinch');
+      expect(s.after.cp.faces.has(s.hands.folding!.face)).toBe(true);
+    }
+  });
+
   it('names the moves a folder would', () => {
     const names = steps.map((s) => (s.named ? s.name : s.kind));
     expect(names.filter((n) => n === 'squash-fold')).toHaveLength(2);
