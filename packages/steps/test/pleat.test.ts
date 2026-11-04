@@ -51,3 +51,13 @@ describe('pleat, crimp and rabbit ear steps', () => {
     expect(s.symbols.filter((x) => x.kind === 'mountain-line')).toHaveLength(1);
   });
 });
+
+describe('a fold left standing', () => {
+  it('says where to stop, and replays to the same standing flap', () => {
+    const corner: Move = { type: 'fold', params: { line: { p: [30, 30], d: [1, -1] }, seed: [45, 45], layers: 1, direction: 'valley', angleDeg: 90 } };
+    const { steps, verified } = buildSteps(designLog(fold([corner])));
+    expect(verified).toBe(true);
+    const c = steps[0]!.caption;
+    expect(c.kind === 'fold' && c.stopDeg).toBe(90);
+  });
+});

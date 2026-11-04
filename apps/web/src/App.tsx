@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   creaseActive,
+  reangle,
   exportDiagrams,
   exportFold,
   exportStepsFold,
@@ -383,6 +384,9 @@ function useKeyboard() {
       } else if (!mod && e.key.toLowerCase() === 'm') {
         const st = useStore.getState();
         st.set({ mirror: !st.mirror });
+      } else if (!mod && (e.key === '[' || e.key === ']')) {
+        // The last fold stands open a little more ([) or closes toward flat (]).
+        void reangle(e.key === '[' ? -15 : 15);
       } else if (!mod && e.key.toLowerCase() === 'l' && !e.repeat) {
         // Hold L to look; a quick tap leaves it on (and another turns it off).
         lDownAt = performance.now();

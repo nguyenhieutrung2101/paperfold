@@ -110,3 +110,22 @@ describe('pleats, crimps and rabbit ears move without tearing the paper', () => 
     });
   }
 });
+
+describe('a flap standing open', () => {
+  it('is drawn turned up about its hinge, in both paper modes', () => {
+    const s = createSheet({ sizeMm: 150 });
+    const r = applyMove(s, { type: 'fold', params: { line: { p: [50, 50], d: [1, -1] }, seed: [70, 70], layers: 1, direction: 'valley', angleDeg: 90 } });
+    if (!r.ok) throw new Error('refused');
+    const after = snapshot(r.state);
+    const f = after.faces.find((face) => face.material.some((p) => p[0] === 150 && p[1] === 150))!;
+    for (const mode of ['ideal', 'real'] as const) {
+      const params = skinParamsFor(after.paper, mode);
+      const w = skinPoint(after, params, f.id, [150, 150]);
+      // Straight up over the fold line, 35 mm (plus its layer height).
+      expect(w[1]).toBeGreaterThan(Math.hypot(25, 25) - 0.5);
+      expect(w[1]).toBeLessThan(Math.hypot(25, 25) + 1.5);
+      expect(w[0]).toBeCloseTo(50, 0);
+      expect(-w[2]).toBeCloseTo(50, 0);
+    }
+  });
+});

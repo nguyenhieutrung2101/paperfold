@@ -15,6 +15,7 @@ import {
   type Line2,
   len3,
   lineThrough,
+  poseRotation,
   type Paper,
   planeDirToWorld,
   planeIsoOf,
@@ -260,6 +261,14 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
   let topHeight = 0;
   let rhoMax = 0;
   let rhoAt: (u: number) => number = () => 0;
+  // Flaps standing open (partial angles): turned up about their hinges, at the height of their
+  // lowest layer, after everything else is placed.
+  const standing = new Map<FaceId, Rigid3>();
+  for (const pose of snap.poses) {
+    const pivot = Math.min(...pose.faces.map((f) => after.get(f) ?? 0));
+    const r = poseRotation(pose, pose.openDeg, pivot);
+    for (const f of pose.faces) standing.set(f, r);
+  }
   if (motion) {
     const before = faceHeights(motion.before, params.layerGapMm);
     const tr = motion.transition;
@@ -301,6 +310,8 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
         mappers.set(f.id, rigidMapper(compose(plan.pose(f.id, k), start), h, plan.moves.has(f.id)));
       } else if (moving.has(f.id) && tr.kind === 'fold') {
         mappers.set(f.id, bendMapper(start, tr.line, { h0, h1, sigma: tr.direction }, motion.theta, rhoAt, rhoPin, blend));
+      } else if (standing.has(f.id)) {
+        mappers.set(f.id, relaxedMapper(start, h1, standing.get(f.id)!));
       } else {
         mappers.set(f.id, staticMapper(start, h0 + (h1 - h0) * k));
       }
@@ -313,14 +324,15 @@ function faceMappers(snap: Snapshot, params: SkinParams, motion?: FoldMotion, re
     const plan = planRelax(snap, after, gap);
     for (const f of snap.faces) {
       const h = after.get(f.id)!;
-      const t = plan.transformOf(f.id, relax, params.restOpen);
+      const t = standing.get(f.id) ?? plan.transformOf(f.id, relax, params.restOpen);
       mappers.set(f.id, t === IDENTITY ? staticMapper(f.placement, h) : relaxedMapper(f.placement, h, t));
       topHeight = Math.max(topHeight, h);
     }
   } else {
     for (const f of snap.faces) {
       const h = after.get(f.id)!;
-      mappers.set(f.id, staticMapper(f.placement, h));
+      const t = standing.get(f.id);
+      mappers.set(f.id, t ? relaxedMapper(f.placement, h, t) : staticMapper(f.placement, h));
       topHeight = Math.max(topHeight, h);
     }
   }

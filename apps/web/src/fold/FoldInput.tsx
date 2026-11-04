@@ -493,6 +493,16 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
         return;
       }
 
+      if (g.stage === 'grab' && ev.altKey && g.line && g.grab) {
+        // Alt holds the fold line where it is: moving the pointer now only raises or lowers the
+        // flap about it, and releasing with Alt leaves it standing at that angle.
+        const x0 = signedDistance(g.line, g.grab);
+        const x = signedDistance(g.line, p);
+        g.geo = Math.acos(Math.max(-1, Math.min(1, x0 === 0 ? 1 : x / x0)));
+        g.theta = Math.min(g.geo, Math.PI - 0.06);
+        publish();
+        return;
+      }
       if (g.stage === 'grab') {
         // A corner press grabs the corner itself.
         const grabAt = g.zone.kind === 'corner' && !g.freehand ? g.zone.point : g.start;
@@ -577,6 +587,15 @@ export function FoldInput({ topHeight }: { readonly topHeight: React.RefObject<n
       g = null;
       const turned = gg.stage === 'push' && gg.push?.precrease ? gg.theta > Math.PI * 0.45 : gg.geo > Math.PI / 2;
       st().set({ choose: null });
+      // Alt on release: a valley fold stays standing at the angle it has now (partial angles).
+      const pm = result?.preview?.move;
+      const standDeg = Math.round((gg.theta * 180) / Math.PI / 5) * 5;
+      if (ev.altKey && gg.stage === 'grab' && pm && pm.type === 'fold' && pm.params.direction === 'valley' && standDeg >= 10 && standDeg <= 170) {
+        const grab = gg.start;
+        await commitMove({ type: 'fold', params: { ...pm.params, angleDeg: standDeg } }, at, { grab, holds }, dragTheta);
+        st().set({ drag: null });
+        return;
+      }
       if (result?.preview && turned) {
         const kind = result.candidates[result.selected]?.kind;
         // Remember what was chosen for this kind of press: it leads next time.

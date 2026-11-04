@@ -4,7 +4,8 @@ import type { Vec2, Vec3 } from '../geometry/vec.ts';
 import { adjacency, edgeKey, getVertex } from '../paper/creasePattern.ts';
 import type { Assignment, Crease, EdgeId, Face, FaceId, Paper, Span, VertexId } from '../paper/types.ts';
 import { type PairKey, pairKey, parsePairKey } from '../state/order.ts';
-import type { KernelState } from '../state/types.ts';
+import { posedPlacements } from '../state/pose.ts';
+import type { FlapPose, KernelState } from '../state/types.ts';
 import { checkInvariants } from '../validate/invariants.ts';
 
 /**
@@ -46,6 +47,8 @@ interface ExactState {
   readonly layerOrder: Array<[number, number, 1 | -1] | [string, 1 | -1]>;
   readonly holds: Array<[FaceId, number, number]>;
   readonly next: [number, number, number, number];
+  /** Flaps standing open: [hinge p x, p y, d x, d y, openDeg, faces]. Absent: none. */
+  readonly poses?: Array<[number, number, number, number, number, FaceId[]]>;
 }
 
 const byId = <T>(m: ReadonlyMap<number, T>): Array<[number, T]> => [...m.entries()].sort((a, b) => a[0] - b[0]);
@@ -60,14 +63,30 @@ export function toFold(state: KernelState, title = 'Paperfold model'): FoldFile 
   const adj = adjacency(cp);
 
   // Folded coordinates: every vertex maps to one world point (connectivity); use a face around it.
+  // Flaps standing open are where they stand (hinge points are the same either way).
+  const placed = posedPlacements(state);
   const folded: Vec3[] = vIds.map((v) => {
     const f = Math.min(...(adj.vertexFaces.get(v) ?? [fIds[0]!]));
-    return applyMaterial(state.folded.placements.get(f)!, getVertex(cp, v));
+    return applyMaterial(placed.get(f)!, getVertex(cp, v));
   });
+  const poseOf = new Map<FaceId, FlapPose>();
+  for (const p of state.poses ?? []) for (const f of p.faces) poseOf.set(f, p);
+  const foldAngle = (e: EdgeId): number => {
+    const c = cp.creases.get(e)!;
+    const ef = adj.edgeFaces.get(e)!;
+    const pl = ef.left === null ? undefined : poseOf.get(ef.left);
+    const pr = ef.right === null ? undefined : poseOf.get(ef.right);
+    const p = pl ?? pr;
+    // A standing flap's hinge is folded only part of the way.
+    if (!p || pl === pr) return c.angleDeg;
+    return Math.sign(c.angleDeg) * (Math.abs(c.angleDeg) - p.openDeg);
+  };
 
   const faceOrders: Array<[number, number, number]> = [];
   for (const [key, s] of [...state.folded.layerOrder.entries()].sort((a, b) => a[0] - b[0])) {
     const [f, g] = parsePairKey(key);
+    // A standing flap lies on nothing.
+    if (poseOf.get(f) !== poseOf.get(g)) continue;
     // Internal s: +1 = f above g in world. FOLD: +1 = f on the side of g's normal.
     const gUp = frontUp(state.folded.placements.get(g)!);
     faceOrders.push([fIndex.get(f)!, fIndex.get(g)!, gUp ? s : -s]);
@@ -100,7 +119,7 @@ export function toFold(state: KernelState, title = 'Paperfold model'): FoldFile 
         frame_parent: 0,
         vertices_coords: folded.map((p) => [...p]),
         edges_assignment: eIds.map((e) => currentAssignment(cp.creases.get(e)!)),
-        edges_foldAngle: eIds.map((e) => cp.creases.get(e)!.angleDeg),
+        edges_foldAngle: eIds.map(foldAngle),
         faceOrders,
       },
     ],
@@ -168,6 +187,7 @@ function exactState(state: KernelState): ExactState {
       }),
     holds: folded.holds.map((h) => [h.face, h.material[0], h.material[1]]),
     next: [next.vertex, next.edge, next.face, next.op],
+    ...(state.poses?.length ? { poses: state.poses.map((p) => [p.hinge.p[0], p.hinge.p[1], p.hinge.d[0], p.hinge.d[1], p.openDeg, [...p.faces]] as [number, number, number, number, number, FaceId[]]) } : {}),
   };
 }
 
@@ -243,5 +263,6 @@ function fromExact(x: ExactState): KernelState {
     },
     next: { vertex: x.next[0], edge: x.next[1], face: x.next[2], op: x.next[3] },
     tol: toleranceFor(Math.max(maxX - minX, maxY - minY)),
+    ...(x.poses?.length ? { poses: x.poses.map(([px, py, dx, dy, openDeg, faces]) => ({ hinge: { p: [px, py] as const, d: [dx, dy] as const }, openDeg, faces })) } : {}),
   };
 }

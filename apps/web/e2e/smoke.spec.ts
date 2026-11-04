@@ -258,6 +258,42 @@ test('a rabbit ear: drag the triangle\'s corner toward where its tip goes', asyn
   await expect(lastStep(page)).toHaveAttribute('aria-label', '3. Rabbit ear');
 });
 
+/** The open flaps of the current state: their angles. */
+const standing = (page: Page) =>
+  page.evaluate(() => {
+    const st = (window as unknown as { __paperfold: { useStore: { getState(): { view: { snapshot: { poses: Array<{ openDeg: number }> } } } } } }).__paperfold.useStore.getState();
+    return st.view.snapshot.poses.map((p) => Math.round(180 - p.openDeg));
+  });
+
+test('partial angles: hold Alt to stand a flap up, [ and ] open and close it', async ({ page }) => {
+  // Corner to the middle, then Alt holds the line while the corner comes back up over it.
+  const a = await screen(page, [74.5, 74.5]);
+  const b = await screen(page, [0, 0]);
+  const mid = await screen(page, [37.25, 37.25]);
+  await page.mouse.move(a[0], a[1]);
+  await page.mouse.down();
+  await page.mouse.move(b[0], b[1], { steps: 20 });
+  await page.waitForTimeout(300);
+  await page.keyboard.down('Alt');
+  await page.mouse.move(mid[0], mid[1], { steps: 12 });
+  await page.waitForTimeout(200);
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await expect(steps(page)).toHaveCount(2);
+  await expect.poll(() => standing(page)).toEqual([90]);
+  // [ opens it further, ] closes it; all the way closed it lies flat.
+  await page.keyboard.press('[');
+  await expect.poll(() => standing(page)).toEqual([75]);
+  for (let i = 0; i < 7; i++) await page.keyboard.press(']');
+  await expect.poll(() => standing(page)).toEqual([]);
+  await expect(steps(page)).toHaveCount(2);
+  // A move that would go through a standing flap is refused with a hint.
+  await page.keyboard.press('[');
+  await expect.poll(() => standing(page)).toEqual([165]);
+  await page.keyboard.press('f');
+  await expect(page.getByText('A flap is standing open. Press ] to lay it down.')).toBeVisible();
+});
+
 test('fold with the keyboard', async ({ page }) => {
   await page.keyboard.press('k');
   await expect(page.getByRole('status').getByText(/Pick what to move/)).toBeVisible();

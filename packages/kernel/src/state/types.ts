@@ -1,3 +1,4 @@
+import type { Line2 } from '../geometry/line.ts';
 import type { Rigid3 } from '../geometry/rigid.ts';
 import type { Tolerance } from '../geometry/tolerance.ts';
 import type { Vec2, Vec3 } from '../geometry/vec.ts';
@@ -31,6 +32,18 @@ export interface FoldedState {
   readonly holds: readonly Hold[];
 }
 
+/**
+ * A free flap left standing open (Phase 2, partial angles; state/pose.ts): turned up about its
+ * hinge from where the flat state has it.
+ */
+export interface FlapPose {
+  /** The hinge on the table plane, with the flap on its left in the flat state. */
+  readonly hinge: Line2;
+  readonly faces: readonly FaceId[];
+  /** How far it stands open, in degrees: more than 0 (lying folded), less than 180 (lying open). */
+  readonly openDeg: number;
+}
+
 export interface IdCounters {
   readonly vertex: number;
   readonly edge: number;
@@ -48,4 +61,6 @@ export interface KernelState {
   readonly folded: FoldedState;
   readonly next: IdCounters;
   readonly tol: Tolerance;
+  /** Flaps left standing open (none: the paper lies flat). */
+  readonly poses?: readonly FlapPose[];
 }

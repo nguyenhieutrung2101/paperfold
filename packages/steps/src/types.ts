@@ -16,7 +16,15 @@ export type Direction = 'up' | 'down' | 'left' | 'right' | 'up-left' | 'up-right
  * word the user reads lives in one file (brief, section 8).
  */
 export type Caption =
-  | { readonly kind: 'fold'; readonly from: Place; readonly dir: Direction; readonly to: Place | null; readonly mountain: boolean }
+  | {
+      readonly kind: 'fold';
+      readonly from: Place;
+      readonly dir: Direction;
+      readonly to: Place | null;
+      readonly mountain: boolean;
+      /** Stop partway, at this angle (the flap stands open). */
+      readonly stopDeg?: number;
+    }
   | { readonly kind: 'precrease'; readonly from: Place; readonly dir: Direction; readonly to: Place | null }
   | { readonly kind: 'unfold'; readonly from: Place }
   | { readonly kind: 'reverse'; readonly reverse: 'inside' | 'outside'; readonly tip: Place }

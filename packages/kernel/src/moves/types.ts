@@ -21,6 +21,11 @@ export interface FoldParams {
   readonly direction: 'valley' | 'mountain';
   /** Where the other hand presses (table plane). Faces under a hold can't move. */
   readonly holds?: readonly Vec2[];
+  /**
+   * How far to fold, in degrees (default 180: flat). Less leaves the flap standing open at
+   * that angle (state/pose.ts); valley folds of a free flap only.
+   */
+  readonly angleDeg?: number;
 }
 
 export interface ReverseFoldParams {
@@ -140,6 +145,8 @@ export type ReasonCode =
   | 'too-thick'
   /** A crease that changes nothing: it's already that sharp there. */
   | 'unchanged'
+  /** A flap stands open: this move would have to go through it or move it (lay it down first). */
+  | 'posed'
   /** The motion would stretch or tear the paper. */
   | 'tear'
   /** Not supported by this phase of the kernel. */
@@ -177,7 +184,8 @@ export type Transition =
       /** Creases this fold made. */
       readonly newCreases: readonly EdgeId[];
       readonly fromDeg: 0;
-      readonly toDeg: 180;
+      /** 180, or less when the flap was left standing open. */
+      readonly toDeg: number;
     }
   | {
       readonly kind: 'reverse';

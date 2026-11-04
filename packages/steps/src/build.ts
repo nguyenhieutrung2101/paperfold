@@ -567,7 +567,10 @@ function makeStep(log: DesignLog, g: Group, index: number, handedness: HandSide)
   let caption: Caption;
   if (g.kind === 'precrease') caption = { kind: 'precrease', from, dir, to };
   else if (g.kind === 'unfold') caption = { kind: 'unfold', from };
-  else caption = { kind: 'fold', from, dir, to, mountain };
+  else {
+    const stop = move.type === 'fold' && move.params.angleDeg !== undefined && move.params.angleDeg < 180 ? move.params.angleDeg : undefined;
+    caption = { kind: 'fold', from, dir, to, mountain, ...(stop !== undefined ? { stopDeg: stop } : {}) };
+  }
   const symbols: DiagramSymbol[] = [
     { kind: mountain ? 'mountain-line' : 'valley-line', a: seg[0], b: seg[1] },
     { kind: g.kind === 'precrease' ? 'fold-unfold-arrow' : mountain ? 'mountain-arrow' : 'valley-arrow', from: grab, to: landing },

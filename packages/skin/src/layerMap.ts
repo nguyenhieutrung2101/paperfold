@@ -49,8 +49,11 @@ export function layerMapData(snap: Snapshot): LayerMapData {
     above.set(f.id, []);
     below.set(f.id, []);
   }
-  // Rows are [f, g, s]: s = +1 when f lies above g.
+  // Rows are [f, g, s]: s = +1 when f lies above g. A flap standing open lies on nothing.
+  const standing = new Map<FaceId, number>();
+  snap.poses.forEach((p, i) => p.faces.forEach((f) => standing.set(f, i)));
   for (const [f, g, s] of snap.layerOrder) {
+    if (standing.get(f) !== standing.get(g)) continue;
     const [hi, lo] = s === 1 ? [f, g] : [g, f];
     above.get(lo)!.push(hi);
     below.get(hi)!.push(lo);

@@ -3,7 +3,7 @@ import type { Vec2 } from './geometry/vec.ts';
 import { adjacency, getVertex } from './paper/creasePattern.ts';
 import type { Assignment, EdgeId, FaceId, OpId, Paper, Span, VertexId } from './paper/types.ts';
 import { parsePairKey } from './state/order.ts';
-import type { KernelState } from './state/types.ts';
+import type { FlapPose, KernelState } from './state/types.ts';
 import { stateHash } from './history/hash.ts';
 
 export interface SnapshotFace {
@@ -43,6 +43,8 @@ export interface Snapshot {
   readonly creases: readonly SnapshotCrease[];
   /** [f, g, +1] means f lies above g in world (+Y). Only overlapping pairs. */
   readonly layerOrder: ReadonlyArray<readonly [FaceId, FaceId, 1 | -1]>;
+  /** Flaps standing open (faces' placements are where they'd lie flat; turn these up). */
+  readonly poses: readonly FlapPose[];
 }
 
 export function snapshot(state: KernelState): Snapshot {
@@ -99,5 +101,6 @@ export function snapshot(state: KernelState): Snapshot {
     faces,
     creases,
     layerOrder,
+    poses: state.poses ?? [],
   };
 }

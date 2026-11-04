@@ -84,6 +84,23 @@ export function perform(h: History, move: Move, extras: OpExtras = {}): PerformO
   };
 }
 
+/**
+ * Redo the current node's move differently, in place (the last fold opened or closed a little):
+ * the same node, a new move from its parent. Only at a node nothing has followed yet.
+ */
+export function amend(h: History, move: Move): PerformOk | Rejection {
+  const node = currentNode(h);
+  if (node.parent === null || node.children.length > 0 || !node.op) return { ok: false, reason: 'unsupported', blockers: [], detail: 'Only the last move can change' };
+  const parent = h.nodes.get(node.parent)!;
+  const result = applyMove(parent.state, move);
+  if (!result.ok) return result;
+  const after = stateHash(result.state);
+  const op: Op = { ...node.op, move, after };
+  const nodes = new Map(h.nodes);
+  nodes.set(node.id, { ...node, op, state: result.state, hash: after });
+  return { ok: true, history: { ...h, nodes }, op, transition: result.transition };
+}
+
 export function canUndo(h: History): boolean {
   return currentNode(h).parent !== null;
 }

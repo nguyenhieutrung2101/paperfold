@@ -13,8 +13,10 @@ import {
   flatView,
   materialPolygon,
   applyPlaneIso,
+  amend,
   canRedo,
   canUndo,
+  currentNode,
   createHistory,
   createSheet,
   currentState,
@@ -653,6 +655,28 @@ export class KernelHost {
       transition: r.transition,
       name: named.confidence >= 0.5 ? named.name : 'fold',
     };
+  }
+
+  /**
+   * Open or close the last fold a little ([ and ], partial angles): the same fold made again to
+   * a new angle, in place. 180° lays it flat.
+   */
+  reangle(deltaDeg: number): PerformResult & { readonly fromDeg?: number } {
+    const node = currentNode(this.history);
+    const move = node.op?.move;
+    if (!move || move.type !== 'fold' || node.parent === null) return { ok: false, reason: 'unsupported', blockers: [] };
+    const now = move.params.angleDeg ?? 180;
+    const next = Math.max(15, Math.min(180, Math.round((now + deltaDeg) / 15) * 15));
+    if (next === now) return { ok: false, reason: 'unchanged', blockers: [] };
+    const { angleDeg: _, ...rest } = move.params;
+    const m: Move = { type: 'fold', params: next >= 180 ? rest : { ...rest, angleDeg: next } };
+    const parent = this.history.nodes.get(node.parent)!.state;
+    const r = amend(this.history, m);
+    if (!r.ok) return refusal(r);
+    this.history = r.history;
+    this.exploreCache = null;
+    const named = recognize(parent, currentState(this.history));
+    return { ok: true, view: this.view(), before: snapshot(parent), transition: r.transition, name: named.confidence >= 0.5 ? named.name : 'fold', fromDeg: now };
   }
 
   undo(): View {

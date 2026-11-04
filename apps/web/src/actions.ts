@@ -36,6 +36,8 @@ export function refused(r: Pick<Refusal, 'reason' | 'blockers'>, at?: { x: numbe
   st.set({ glow: new Set(r.blockers), lastRefusal: { reason: r.reason, at: now } });
   cue('refuse', lastTouch());
   if (at && again) st.showHint(reasonHints[r.reason], at.x, at.y);
+  // A flap standing open blocks things for a reason you can't see from the move: say so at once.
+  else if (r.reason === 'posed') st.showHint(reasonHints.posed, at?.x ?? window.innerWidth / 2, at?.y ?? window.innerHeight * 0.75);
   window.setTimeout(() => {
     if (useStore.getState().glow.size > 0) useStore.getState().set({ glow: new Set() });
   }, 900);
@@ -76,8 +78,9 @@ export async function commitMove(
   }
   landed(r, fromTheta);
   advanceFirstRun(1);
+  const partial = move.type === 'fold' && (move.params.angleDeg ?? 180) < 180;
   const foldLike = move.type === 'fold' || move.type === 'reverseFold' || move.type === 'squash' || move.type === 'petal' || move.type === 'pleat' || move.type === 'crimp' || move.type === 'rabbitEar';
-  if (useStore.getState().autoCrease && foldLike) await creaseActive();
+  if (useStore.getState().autoCrease && foldLike && !partial) await creaseActive();
   void checkFollow();
   // The mirror tool: the same fold on the other side of the model's middle line.
   if (useStore.getState().mirror && foldLike && before) {
@@ -172,6 +175,17 @@ async function checkFollow(): Promise<void> {
   const now = useStore.getState().follow;
   if (!now) return;
   useStore.getState().set({ follow: { ...now, index: r.index, off: !r.matched } });
+}
+
+/** Open ([) or close (]) the last fold by 15°: a flap left standing at an angle. */
+export async function reangle(deltaDeg: number, at?: { x: number; y: number }): Promise<void> {
+  const r = await kernel().reangle(deltaDeg);
+  if (!r.ok) {
+    if (r.reason !== 'unchanged') refused(r, at);
+    return;
+  }
+  landed(r, ((r.fromDeg ?? 180) * Math.PI) / 180);
+  void checkFollow();
 }
 
 export async function undo(): Promise<void> {

@@ -7,10 +7,29 @@ import { rabbitEarFold } from './rabbit.ts';
 import { reverseFold } from './reverse.ts';
 import { squashFold } from './squash.ts';
 import { rotate, turnOver } from './turn.ts';
-import type { Move, MoveResult } from './types.ts';
+import { rotatePose } from '../state/pose.ts';
+import { type Move, type MoveResult, reject } from './types.ts';
 
 /** Apply any move. Pure: the input state is never modified. */
 export function applyMove(state: KernelState, move: Move): MoveResult {
+  const poses = state.poses ?? [];
+  if (poses.length > 0 && move.type !== 'fold' && move.type !== 'rotate') {
+    // Only folds (checked against the open flaps) and turning the model on the table work
+    // around a flap that stands open.
+    return reject('posed', poses.flatMap((p) => [...p.faces]), { detail: 'Lay the open flaps down first' });
+  }
+  if (poses.length > 0 && move.type === 'rotate') {
+    // Turn the flat paper, then the open flaps' hinges with it.
+    const { poses: _, ...flat } = state;
+    const r = rotate(flat, move.params);
+    if (!r.ok || r.transition.kind !== 'rotate') return r;
+    const { center, degrees } = r.transition;
+    return { ...r, state: { ...r.state, poses: poses.map((p) => rotatePose(p, center, degrees)) } };
+  }
+  return dispatch(state, move);
+}
+
+function dispatch(state: KernelState, move: Move): MoveResult {
   switch (move.type) {
     case 'fold':
       return fold(state, move.params);

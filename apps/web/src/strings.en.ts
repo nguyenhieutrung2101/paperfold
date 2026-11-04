@@ -167,6 +167,7 @@ export const reasonHints: Record<ReasonCode, string> = {
   tear: 'That would tear the paper.',
   unsupported: "That fold isn't possible here yet.",
   internal: "Something's in the way.",
+  posed: 'A flap is standing open. Press ] to lay it down.',
 };
 
 /** The chip near the pointer while dragging: what this drag will do. */
@@ -260,6 +261,7 @@ export function captionText(c: Caption): string {
       // A landmark says where it goes; a direction is only needed without one.
       const where = c.to ? `to ${targetText(c.to)}` : dirWords[c.dir];
       const behind = c.mountain ? ' behind' : '';
+      if (c.stopDeg !== undefined) return `Fold ${placeText(c.from)}${behind} ${where}, but stop at ${Math.round(c.stopDeg)}° and leave it standing.`;
       return `Fold ${placeText(c.from)}${behind} ${where}.`;
     }
     case 'precrease': {

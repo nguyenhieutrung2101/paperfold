@@ -96,6 +96,16 @@ export function stateHash(state: KernelState): StateHash {
     h.num(k);
     h.num(folded.layerOrder.get(k)!);
   }
+  h.str('q');
+  for (const pose of state.poses ?? []) {
+    h.num(pose.hinge.p[0]);
+    h.num(pose.hinge.p[1]);
+    h.num(pose.hinge.d[0]);
+    h.num(pose.hinge.d[1]);
+    h.num(pose.openDeg);
+    h.num(pose.faces.length);
+    for (const f of pose.faces) h.num(f);
+  }
   h.str('h');
   for (const hold of folded.holds) {
     h.num(hold.face);

@@ -18,6 +18,7 @@ export * from './state/types.ts';
 export * from './state/create.ts';
 export * from './state/order.ts';
 export * from './state/flat.ts';
+export * from './state/pose.ts';
 export * from './state/derive.ts';
 export * from './state/levels.ts';
 export * from './state/equivalence.ts';

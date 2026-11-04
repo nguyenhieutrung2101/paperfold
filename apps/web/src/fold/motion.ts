@@ -154,23 +154,28 @@ export function foldPose(
   // A reverse fold's tip is held inside (or around) the flap, and a squash or petal fold is
   // held by its own layers: they don't spring back. They move in stages: a little longer.
   const reverse = active.transition.kind !== 'fold';
-  const restTheta = ideal || reverse ? Math.PI : (profile.restDeg * Math.PI) / 180;
+  // A fold left standing open goes to its angle and stays (the flap is held there).
+  const end = active.transition.kind === 'fold' ? (active.transition.toDeg * Math.PI) / 180 : Math.PI;
+  const partial = end < Math.PI - 1e-9;
+  const restTheta = partial ? end : ideal || reverse ? Math.PI : (profile.restDeg * Math.PI) / 180;
 
   let theta: number;
   let animating = true;
   // From a live drag the paper is already most of the way over: land from there.
   const from = clamp01((active.fromTheta ?? 0) / Math.PI) * Math.PI;
   // A reverse fold opens the flap and refolds it: give it a little longer.
-  const foldMs = TIMING.fold * (reverse ? 1.7 : 1) * k * Math.max(0.25, (Math.PI - from) / Math.PI);
+  const foldMs = TIMING.fold * (reverse ? 1.7 : 1) * k * Math.max(0.25, Math.abs(end - from) / Math.PI);
   if (t < foldMs) {
     const e = from > 0 ? easeOut(clamp01(t / foldMs)) : easeInOut(clamp01(t / foldMs));
-    theta = from + (Math.PI - from) * e;
+    theta = from + (end - from) * e;
   } else if (t < foldMs + TIMING.settle * k) {
     const s = easeOut(clamp01((t - foldMs) / (TIMING.settle * k)));
-    theta = Math.PI + (restTheta - Math.PI) * s;
+    theta = end + (restTheta - end) * s;
   } else {
     theta = restTheta;
     animating = false;
+    // The still frame draws a flap standing open from the kernel's pose.
+    if (partial) return { motion: null, animating: false };
   }
 
   let sharpnessAt = profile.at;

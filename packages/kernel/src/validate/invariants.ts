@@ -1,3 +1,4 @@
+import { poseProblems } from '../state/pose.ts';
 import { lineThrough, signedDistance, type Line2 } from '../geometry/line.ts';
 import {
   type Box,
@@ -30,7 +31,8 @@ export type InvariantCode =
   | 'taco-tortilla'
   | 'tortilla-tortilla'
   | 'maekawa'
-  | 'kawasaki';
+  | 'kawasaki'
+  | 'pose';
 
 export interface Violation {
   readonly code: InvariantCode;
@@ -75,6 +77,8 @@ export function checkInvariants(state: KernelState, scope?: CheckScope): Violati
   checkConsistency(state, view, out, changed);
   checkLayerOrder(state, view, out, changed);
   checkFlatVertices(state, out, changed);
+  // Open flaps: free, joined only along their hinges, not running into each other.
+  for (const p of poseProblems(state)) out.push({ code: 'pose', message: p.message, faces: p.faces });
   return out;
 }
 
